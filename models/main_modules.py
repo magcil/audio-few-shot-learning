@@ -10,9 +10,9 @@ from utils.spectrogram_augmentations import SpecAugment
 
 class EncoderModule(nn.Module):
 
-    def __init__(self, encoder_str, augmentations_config_path, model_config):
+    def __init__(self, encoder_str, model_config):
         super(EncoderModule, self).__init__()
-        self.augmentation_module = SpecAugment(config_path = augmentations_config_path)
+        self.augmentation_module = SpecAugment()
         self.encoder_str = encoder_str
         self.encoder = get_backbone_model(encoder_name=self.encoder_str, model_config = model_config)
 
