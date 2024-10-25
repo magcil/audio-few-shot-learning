@@ -25,3 +25,5 @@ triton==3.0.0
 typing_extensions==4.9.0
 pandas==2.2.3tqdm==4.66.5
 tqdm==4.66.5
+librosa==0.10.2
+matplotlib==3.9.2
