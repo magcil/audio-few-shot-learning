@@ -1,0 +1,36 @@
+
+{
+"CNN":
+    {
+  "in_channels":1,
+  "hidden_channels":64,
+  "pool_dim":[3, 3],
+  "out_dim":64
+    },
+
+"Hybrid":
+    {
+  "in_channels":1,
+  "seq_layers":1,
+  "seq_type":"RNN",
+  "bidirectional":false,
+  "hidden_channels":64,
+  "pool_dim":[3, 3],
+  "out_dim":64
+    },
+
+"Attention":
+    {
+    "embed_dim":64,
+    "num_heads":1,
+    "ffn_dim":256,
+    "dropout":0.1
+    },
+
+"Projection":
+    {
+    "input_dim":256,
+    "hidden_dim":128,
+    "output_dim":256
+    }
+}

@@ -1,32 +1,31 @@
-"""
-File contains all necessary functions and classes to create either a purely
-    convolutional modle or a variety of convolutional-sequential hybrids. These
-    models share identical convolutional encoder sections and only measurably
-    differ in the inclusion/ or lack of a sequential model component.
-
-Functions/Classes:
-    -> Floor division function we use to calculate logit layer size for CNN
-    -> Smaller conv block used to create the encodeing structure:
-        - Each with; Conv2d, BatchNorm2d, ReLU, MaxPool2d
-        - Conv2d has kernel=3 and padding=1 fixed
-        - Stride and kernel for MaxPool is controlled by pool_dim variable
-    -> Standardised Convolutional encoder(shared between pure conv and hybrids)
-    -> Purely convolutional model class
-    -> Hybrid model class with various sequential modle types supoorted,
-        LSTM/GRU/RNN
-
-Like all base learners created and considered, the option for encoding without
-    classification is included(added as out_dim just being different from num_classes)
-    along with max pool dimensionality control, to make sure models are suitable
-    for the length of dataset we want to work with, time dimensionality wise.
-
-The 'Standard' prefix to the models is to confirm that they use a standardised
-    backbone in experiment logs.
-"""
-
-import torch
+import json
+import os
+import sys
 import numpy as np
-import torch.nn as nn
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from torch import nn
+import torch
+import torch.nn.functional as F
+from utils.spectrogram_augmentations import SpecAugment
+
+class EncoderModule(nn.Module):
+
+    def __init__(self, encoder_str, augmentations_config_path, model_config):
+        super(EncoderModule, self).__init__()
+        self.augmentation_module = SpecAugment(config_path = augmentations_config_path)
+        self.encoder_str = encoder_str
+        self.encoder = get_backbone_model(encoder_name=self.encoder_str, model_config = model_config)
+
+    def forward(self, spec):
+        ## Get a fixed number of augmentations of x in x_list
+        spec_list = self.augmentation_module.apply(spec)
+        ## get_encoder
+        encoded_features = []
+        for x in spec_list:
+            encoded_x = self.encoder(x)
+            ## Encoded x will be of shape [batch_size,D]
+            encoded_features.append(encoded_x)
+        return encoded_features
 
 def floor_power(num, divisor, power):
     """Performs what we call a floor power, a recursive fixed division process
@@ -211,24 +210,90 @@ class StandardHybrid(nn.Module):
         x = self.logits(x)
 
         return x
-if __name__ == '__main__':
+
+class SelfAttention(nn.Module):
+
+    def __init__(self, model_config):
+        super(SelfAttention, self).__init__()
+        self.embed_dim = model_config['Attention']['embed_dim']
+        self.num_heads = model_config['Attention']['num_heads']
+        self.ffn_dim = model_config['Attention']['ffn_dim']
+        self.dropout = model_config['Attention']['dropout']
+
+        # TransformerEncoderLayer: includes MultiheadAttention, FeedForward, and LayerNorm
+        self.encoder_layer = nn.TransformerEncoderLayer(
+            d_model=self.embed_dim,
+            nhead=self.num_heads,
+            dim_feedforward=self.ffn_dim,
+            dropout=self.dropout,
+            batch_first=True  # Makes the layer expect input as (batch_size, seq_length, embed_dim)
+        )
+
+    def forward(self, x):
+        # Input x shape: (batch_size, 4, D)
+
+        # Pass input through TransformerEncoderLayer
+        attn_output = self.encoder_layer(x)  # Output shape: (batch_size, 4, D)
+
+        # Channel-wise concatenation: Concatenate along the feature dimension to get (batch_size, 4 * D)
+        output = torch.cat([attn_output[:, i, :] for i in range(attn_output.size(1))], dim=-1)
+
+        return output
 
 
-    data = torch.rand(10, 1,90, 200)
-    print(data.shape)
-    model = StandardHybrid(in_channels=1,
-                    seq_layers=2,
-                    seq_type='RNN',
-                    bidirectional=True,
-                    hidden_channels=64,
-                    pool_dim=(3,2),
-                    out_dim=5)
+class ProjectionHead(nn.Module):
 
-    out = model.forward(data)
-    print(out.shape)
+    def __init__(self, model_config):
+        super(ProjectionHead, self).__init__()
+        self.input_dim = model_config['Projection']['input_dim']
+        self.hidden_dim = model_config['Projection']['hidden_dim']
+        self.output_dim = model_config['Projection']['output_dim']
 
 
-    model = StandardCNN(1, data.shape, 64, (3,3), 5)
-    out = model.forward(data)
-    print(out.shape)
+        # Single layer: Keep the same dimension for input and output
+        self.fc1 = nn.Linear(self.input_dim, self.hidden_dim)
+
+        # Use Layer Normalization instead of Batch Normalization
+        self.ln1 = nn.LayerNorm(self.hidden_dim)
+
+        self.fc2 = nn.Linear(self.hidden_dim, self.output_dim)
+        self.ln2 = nn.LayerNorm(self.output_dim)
+
+    def forward(self, x):
+        # Pass through the first layer and apply ReLU activation
+        x = F.relu(self.fc1(x))
+        # Pass through the second layer
+        x = self.fc2(x)
+        x_norm = F.normalize(x, p=2.0, dim=1, eps=1e-12, out=None)
+
+        return x_norm
     
+def get_backbone_model(encoder_name, model_config):
+    
+    if encoder_name == 'CNN':
+        in_channels = model_config[encoder_name]['in_channels']
+        hidden_channels = model_config[encoder_name]['hidden_channels']
+        pool_dim = model_config[encoder_name]["pool_dim"]
+        out_dim = model_config[encoder_name]["out_dim"]
+        backbone_model = StandardCNN(in_channels = in_channels,
+                                     hidden_channels = hidden_channels,
+                                     pool_dim = pool_dim,
+                                     out_dim = out_dim)
+        
+
+    elif encoder_name == 'Hybrid':
+        in_channels = model_config[encoder_name]["in_channels"]
+        seq_layers = model_config[encoder_name]["seq_layers"]
+        seq_type = model_config[encoder_name]["seq_type"]
+        bidirectional = model_config[encoder_name]["bidirectional"]
+        hidden_channels = model_config[encoder_name]['hidden_channels']
+        pool_dim = model_config[encoder_name]["pool_dim"]
+        out_dim = model_config[encoder_name]['out_dim']
+        backbone_model = StandardHybrid(in_channels = in_channels,
+                                        seq_layers = seq_layers,
+                                        seq_type = seq_type,
+                                        bidirectional = bidirectional,
+                                        hidden_channels = hidden_channels,
+                                        pool_dim = pool_dim,
+                                        out_dim = out_dim)
+    return backbone_model
