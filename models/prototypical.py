@@ -44,14 +44,14 @@ class PrototypicalNetworks(FewShotClassifier):
 
 class ContrastivePrototypicalNetworks(FewShotClassifier):
 
-    def __init__(self,backbone, attention_model, projection_head, *args, **kwargs):
+    def __init__(self, backbone, attention_model, projection_head, *args, **kwargs):
         # Call the parent class constructor and pass the remaining arguments
         super(ContrastivePrototypicalNetworks, self).__init__(*args, **kwargs)
         self.backbone = backbone
         self.attention_model = attention_model
         self.projection_head = projection_head
 
-    def compute_features(self,images:Tensor) -> Tensor:
+    def compute_features(self, images: Tensor) -> Tensor:
         original_feature_list = self.backbone(images)
         features = torch.stack(original_feature_list, dim=1)
         features = self.attention_model(features)
@@ -60,7 +60,6 @@ class ContrastivePrototypicalNetworks(FewShotClassifier):
     def compute_query_features(self, images: Tensor) -> Tensor:
         self.query_feature_list = self.backbone(images)
 
-        
         return self.query_feature_list
 
     def shuffle_augmentations(self, feature_list):
