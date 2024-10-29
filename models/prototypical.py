@@ -1,0 +1,88 @@
+"""
+See original implementation (quite far from this one)
+at https://github.com/jakesnell/prototypical-networks
+"""
+from torch import Tensor
+import os
+import sys
+import random
+import torch
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from models.few_shot_classifier import FewShotClassifier
+
+
+class PrototypicalNetworks(FewShotClassifier):
+    """
+    Jake Snell, Kevin Swersky, and Richard S. Zemel.
+    "Prototypical networks for few-shot learning." (2017)
+    https://arxiv.org/abs/1703.05175
+
+    Prototypical networks extract feature vectors for both support and query images. Then it
+    computes the mean of support features for each class (called prototypes), and predict
+    classification scores for query images based on their euclidean distance to the prototypes.
+    """
+
+    def forward(
+        self,
+        query_images: Tensor,
+    ) -> Tensor:
+        """
+        Overrides forward method of FewShotClassifier.
+        Predict query labels based on their distance to class prototypes in the feature space.
+        Classification scores are the negative of euclidean distances.
+        """
+        # Extract the features of query images
+        query_features = self.compute_features(query_images)
+        self._raise_error_if_features_are_multi_dimensional(query_features)
+
+        # Compute the euclidean distance from queries to prototypes
+        scores = self.l2_distance_to_prototypes(query_features)
+
+        return self.softmax_if_specified(scores)
+
+
+class ContrastivePrototypicalNetworks(FewShotClassifier):
+
+    def __init__(self, backbone, attention_model, projection_head, *args, **kwargs):
+        # Call the parent class constructor and pass the remaining arguments
+        super(ContrastivePrototypicalNetworks, self).__init__(*args, **kwargs)
+        self.backbone = backbone
+        self.attention_model = attention_model
+        self.projection_head = projection_head
+
+    def compute_features(self, images: Tensor) -> Tensor:
+        original_feature_list = self.backbone(images)
+        features = torch.stack(original_feature_list, dim=1)
+        features = self.attention_model(features)
+        return features
+
+    def compute_query_features(self, images: Tensor) -> Tensor:
+        self.query_feature_list = self.backbone(images)
+
+        return self.query_feature_list
+
+    def shuffle_augmentations(self, feature_list):
+        augmentations = feature_list[1:]
+        random.shuffle(augmentations)
+        shuffled_features = torch.stack([feature_list[0]] + augmentations, dim=1)
+        return shuffled_features
+
+    def forward(self, query_images, inference=False):
+        self.query_feature_list = self.compute_query_features(query_images)
+        query_features = torch.stack(self.query_feature_list, dim=1)
+        query_features = self.attention_model(query_features)
+        self._raise_error_if_features_are_multi_dimensional(query_features)
+        if inference == True:
+            query_features = self.l2_distance_to_prototypes(query_features)
+        return query_features
+
+    def contrastive_forward(self):
+        shuffled_features = self.shuffle_augmentations(self.query_feature_list)
+        shuffled_features = self.attention_model(shuffled_features)
+        projected_features = self.projection_head(shuffled_features)
+        return projected_features
+
+    @staticmethod
+    def is_transductive() -> bool:
+        return False
