@@ -53,8 +53,7 @@ def evaluate_on_one_task(
     """
     model.process_support_set(support_images, support_labels)
     with torch.no_grad():
-        predictions = model(query_images)
-
+        predictions = model(query_images, inference=True).detach().data
     number_of_correct_predictions = ((torch.max(predictions, 1)[1] == query_labels).sum().item())
 
     return number_of_correct_predictions, len(query_labels)
