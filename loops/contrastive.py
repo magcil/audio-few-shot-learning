@@ -60,7 +60,7 @@ def contrastive_training_loop(model, training_loader, validation_loader, optimiz
                                                                                    cpl_loss_fn=cpl_loss_fn,
                                                                                    l_param=l_param)
 
-        validation_accuracy = evaluate(model=model, data_loader=validation_loader, device=device)
+        validation_accuracy, validation_accuracy_std = evaluate(model=model, data_loader=validation_loader, device=device)
         ear_stopping(val_loss=1 - validation_accuracy, model=model, epoch=epoch)
         if ear_stopping.early_stop:
             print("Early Stopping.")
@@ -75,5 +75,5 @@ def contrastive_training_loop(model, training_loader, validation_loader, optimiz
 
 
 def contrastive_testing_loop(trained_model, testing_loader, device):
-    test_accuracy = evaluate(model=trained_model, data_loader=testing_loader, device=device)
-    return {"test_accuracy": test_accuracy}
+    test_accuracy, accuracy_std = evaluate(model=trained_model, data_loader=testing_loader, device=device)
+    return {"test_accuracy": test_accuracy, "test_accuracy_std": accuracy_std}
