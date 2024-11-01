@@ -10,7 +10,8 @@ import torch
 from tqdm import tqdm
 from torch.utils.data import DataLoader
 from torch.optim import Optimizer
-
+from typing import Optional
+import numpy as np
 from callbacks.early_stopping import EarlyStopping
 
 
@@ -53,12 +54,10 @@ def evaluate_on_one_task(
     """
     model.process_support_set(support_images, support_labels)
     with torch.no_grad():
-        predictions = model(query_images)
-
+        predictions = model(query_images, inference=True)
     number_of_correct_predictions = ((torch.max(predictions, 1)[1] == query_labels).sum().item())
 
     return number_of_correct_predictions, len(query_labels)
-
 
 def evaluate(
     model,
@@ -66,28 +65,24 @@ def evaluate(
     device: str = "cuda",
     use_tqdm: bool = True,
     tqdm_prefix: Optional[str] = None,
-) -> float:
+) -> tuple[float, float]:
     """
     Evaluate the model on few-shot classification tasks
     Args:
         model: a few-shot classifier
-        data_loader: loads data in the shape of few-shot classification tasks*
+        data_loader: loads data in the shape of few-shot classification tasks
         device: where to cast data tensors.
             Must be the same as the device hosting the model's parameters.
         use_tqdm: whether to display the evaluation's progress bar
         tqdm_prefix: prefix of the tqdm bar
     Returns:
-        average classification accuracy
+        mean classification accuracy and standard deviation of accuracies
     """
-    # We'll count everything and compute the ratio at the end
-    total_predictions = 0
-    correct_predictions = 0
+    # List to store accuracies for each task
+    accuracies = []
 
-    # eval mode affects the behaviour of some layers (such as batch normalization or dropout)
-    # no_grad() tells torch not to keep in memory the whole computational graph
     model.eval()
     with torch.no_grad():
-        # We use a tqdm context to show a progress bar in the logs
         with tqdm(
                 enumerate(data_loader),
                 total=len(data_loader),
@@ -109,14 +104,18 @@ def evaluate(
                     query_labels.to(device),
                 )
 
-                total_predictions += total
-                correct_predictions += correct
+                # Calculate accuracy for this task and store it
+                task_accuracy = correct / total
+                accuracies.append(task_accuracy)
 
-                # Log accuracy in real time
-                tqdm_eval.set_postfix(accuracy=correct_predictions / total_predictions)
+                # Log average accuracy in real time
+                tqdm_eval.set_postfix(accuracy=np.mean(accuracies))
 
-    return correct_predictions / total_predictions
+    # Calculate mean and standard deviation of accuracies
+    mean_accuracy = np.mean(accuracies)
+    std_accuracy = np.std(accuracies)
 
+    return mean_accuracy, std_accuracy
 
 def prototypical_training_loop(model, training_loader, validation_loader, optimizer, device, loss_function, epochs,
                                patience, train_scheduler, experiment_folder):
@@ -133,7 +132,7 @@ def prototypical_training_loop(model, training_loader, validation_loader, optimi
                                                device=device,
                                                loss_function=loss_function)
 
-        validation_accuracy = evaluate(model=model, data_loader=validation_loader, device=device)
+        validation_accuracy,accuracy_std = evaluate(model=model, data_loader=validation_loader, device=device)
         ear_stopping(val_loss=1 - validation_accuracy, model=model, epoch=epoch)
         if ear_stopping.early_stop:
             print("Early Stopping.")
@@ -145,5 +144,5 @@ def prototypical_training_loop(model, training_loader, validation_loader, optimi
 
 
 def prototypical_testing_loop(trained_model, testing_loader, device):
-    test_accuracy = evaluate(model=trained_model, data_loader=testing_loader, device=device)
-    return {"test_accuracy": test_accuracy}
+    test_accuracy,accuracy_std = evaluate(model=trained_model, data_loader=testing_loader, device=device)
+    return {"test_accuracy": test_accuracy, "test_accuracy_std": accuracy_std}

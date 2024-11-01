@@ -8,7 +8,7 @@ from statistics import mean
 from tqdm import tqdm
 from torch.utils.data import DataLoader
 from torch.optim import Optimizer
-
+import torch
 from loops.prototypical import evaluate
 from callbacks.early_stopping import EarlyStopping
 
@@ -44,9 +44,9 @@ def training_epoch(model, data_loader: DataLoader, optimizer: Optimizer, device,
 
 
 def contrastive_training_loop(model, training_loader, validation_loader, optimizer, device, fsl_loss_fn, cpl_loss_fn,
-                              l_param, epochs, train_scheduler, patience, experiment_folder):
+                              l_param, epochs, train_scheduler, patience, results_path):
 
-    ear_stopping = EarlyStopping(path=os.path.join(PROJECT_PATH, "experiments", experiment_folder + "model.pt"),
+    ear_stopping = EarlyStopping(path=os.path.join(PROJECT_PATH, "experiments", results_path, "model.pt"),
                                  patience=patience,
                                  verbose=True)
 
@@ -60,17 +60,20 @@ def contrastive_training_loop(model, training_loader, validation_loader, optimiz
                                                                                    cpl_loss_fn=cpl_loss_fn,
                                                                                    l_param=l_param)
 
-        validation_accuracy = evaluate(model=model, data_loader=validation_loader, device=device)
+        validation_accuracy, validation_accuracy_std = evaluate(model=model, data_loader=validation_loader, device=device)
         ear_stopping(val_loss=1 - validation_accuracy, model=model, epoch=epoch)
         if ear_stopping.early_stop:
             print("Early Stopping.")
             break
 
         train_scheduler.step()
+    saved_model_pt_path = os.path.join(PROJECT_PATH,"experiments",results_path,"model.pt")
+    model.load_state_dict(torch.load(saved_model_pt_path))
+    trained_model = model
 
-    return model
+    return trained_model
 
 
 def contrastive_testing_loop(trained_model, testing_loader, device):
-    test_accuracy = evaluate(model=trained_model, data_loader=testing_loader, device=device)
-    return {"test_accuracy": test_accuracy}
+    test_accuracy, accuracy_std = evaluate(model=trained_model, data_loader=testing_loader, device=device)
+    return {"test_accuracy": test_accuracy, "test_accuracy_std": accuracy_std}
