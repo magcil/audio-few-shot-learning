@@ -79,7 +79,7 @@ class MetaAudioDataset(FewShotDataset):
         Normalize a spectrogram to the range [0, 1].
 
         Parameters:
-            spec (torch.Tensor): Input spectrogram of shape [1, 128, 157].
+            spec (torch.Tensor): Input spectrogram of shape [1, freq_bins, time_bins].
 
         Returns:
             torch.Tensor: Normalized spectrogram.

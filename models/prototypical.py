@@ -83,7 +83,6 @@ class ContrastivePrototypicalNetworks(FewShotClassifier):
         projected_features = self.projection_head(shuffled_features)
         if project_prototypes == True:
             projected_prototypes = self.projection_head(self.prototypes)
-            print(projected_prototypes.min(),projected_prototypes.max())
         else:
             projected_prototypes = self.prototypes
         return projected_features,projected_prototypes
