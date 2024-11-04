@@ -1,25 +1,27 @@
-import os 
+import os
 import sys
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import torch
 import argparse
 from datasets.task_sampler import TaskSampler
 from datasets.datasets import MetaAudioDataset
 from torch.utils.data import DataLoader
-from models.main_modules import EncoderModule,SelfAttention,ProjectionHead
+from models.main_modules import EncoderModule, SelfAttention, ProjectionHead
 from models.prototypical import ContrastivePrototypicalNetworks
 from loops.contrastive import contrastive_testing_loop, contrastive_training_loop
 from torch.optim.lr_scheduler import MultiStepLR
 from loops.loss import FSL_Loss, CPL_Loss
 import json
 import warnings
+
 warnings.filterwarnings("ignore")
 
 
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("-e", "--experiment_config", help="Path to Experiment configuration file.", required=True)
-    parser.add_argument("-m", "--model_config", help="Path to model_params file", required = True)
+    parser.add_argument("-m", "--model_config", help="Path to model_params file", required=True)
     return parser.parse_args()
 
 
@@ -31,7 +33,7 @@ if __name__ == "__main__":
 
     with open(args.model_config, "r") as f:
         model_config = json.load(f)
-    
+
     ## Choosing the dataset
     data_root = '/data'
     dataset_name = experiment_config['dataset_name']
@@ -59,9 +61,9 @@ if __name__ == "__main__":
 
     print(f"Loading Dataset:::  {dataset_name}, Device used:::  {device}")
 
-    train_set = MetaAudioDataset(root = dataset_path, split = 'train')
-    val_set = MetaAudioDataset(root = dataset_path, split = 'valid')
-    test_set = MetaAudioDataset(root = dataset_path, split = 'test')
+    train_set = MetaAudioDataset(root=dataset_path, split='train')
+    val_set = MetaAudioDataset(root=dataset_path, split='valid')
+    test_set = MetaAudioDataset(root=dataset_path, split='test')
 
     ## Initialize Samplers
     train_sampler = TaskSampler(train_set, n_way=n_way, n_shot=n_shot, n_query=n_query, n_tasks=n_training_tasks)
@@ -70,10 +72,12 @@ if __name__ == "__main__":
 
     # ## Initialize DataLoaders
 
-    train_loader = DataLoader(train_set,
+    train_loader = DataLoader(
+        train_set,
         batch_sampler=train_sampler,
         pin_memory=True,
-        collate_fn=train_sampler.episodic_collate_fn,)
+        collate_fn=train_sampler.episodic_collate_fn,
+    )
 
     val_loader = DataLoader(
         val_set,
@@ -103,31 +107,37 @@ if __name__ == "__main__":
     except:
         Exception("Already exists")
 
-    backbone = EncoderModule(encoder_str = encoder_str, model_config = model_config)
-    attention = SelfAttention(model_config = model_config)
-    projection = ProjectionHead(model_config = model_config)
-    few_shot_model = ContrastivePrototypicalNetworks(backbone = backbone, attention_model = attention, projection_head = projection).to(device)
+    backbone = EncoderModule(encoder_str=encoder_str, model_config=model_config)
+    attention = SelfAttention(model_config=model_config)
+    projection = ProjectionHead(model_config=model_config)
+    few_shot_model = ContrastivePrototypicalNetworks(backbone=backbone,
+                                                     attention_model=attention,
+                                                     projection_head=projection).to(device)
     fsl_loss = FSL_Loss().to(device)
-    cpl_loss = CPL_Loss(T = t_param, M = m_param).to(device)
+    cpl_loss = CPL_Loss(T=t_param, M=m_param).to(device)
 
-    train_optimizer = torch.optim.Adam(few_shot_model.parameters(), lr = lr)
+    train_optimizer = torch.optim.Adam(few_shot_model.parameters(), lr=lr)
     ## Initialize scheduler
-    train_scheduler = MultiStepLR(
-        train_optimizer,
-        milestones=scheduler_milestones,
-        gamma=scheduler_gamma
-    )
+    train_scheduler = MultiStepLR(train_optimizer, milestones=scheduler_milestones, gamma=scheduler_gamma)
     print("Starting to train")
     project_prototypes = experiment_config['project_prototypes']
     normalize_prototypes = experiment_config['normalize_prototypes']
-    trained_model = contrastive_training_loop(model = few_shot_model,
-                            training_loader = train_loader, validation_loader = val_loader,
-                            optimizer = train_optimizer, device = device, fsl_loss_fn = fsl_loss,
-                            cpl_loss_fn = cpl_loss,l_param = l_param, epochs = epochs, 
-                            train_scheduler = train_scheduler, patience = patience, 
-                            results_path = experiment_folder, project_prototypes = project_prototypes, normalize_prototypes = normalize_prototypes)
+    trained_model = contrastive_training_loop(model=few_shot_model,
+                                              training_loader=train_loader,
+                                              validation_loader=val_loader,
+                                              optimizer=train_optimizer,
+                                              device=device,
+                                              fsl_loss_fn=fsl_loss,
+                                              cpl_loss_fn=cpl_loss,
+                                              l_param=l_param,
+                                              epochs=epochs,
+                                              train_scheduler=train_scheduler,
+                                              patience=patience,
+                                              results_path=experiment_folder,
+                                              project_prototypes=project_prototypes,
+                                              normalize_prototypes=normalize_prototypes)
     print(trained_model)
     print("Starting to test")
 
-    msg =contrastive_testing_loop(trained_model = trained_model, testing_loader = test_loader, device = device)
+    msg = contrastive_testing_loop(trained_model=trained_model, testing_loader=test_loader, device=device)
     print(msg)

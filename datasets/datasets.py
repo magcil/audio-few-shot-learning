@@ -74,7 +74,7 @@ class MetaAudioDataset(FewShotDataset):
     def get_labels(self) -> List[int]:
         return list(self.data_df.label.map(self.class_to_label))
 
-    def normalize_spectrogram(self,spec):
+    def normalize_spectrogram(self, spec):
         """
         Normalize a spectrogram to the range [0, 1].
 
@@ -87,14 +87,14 @@ class MetaAudioDataset(FewShotDataset):
         # Compute min and max values in the spectrogram
         min_val = spec.min()
         max_val = spec.max()
-        
+
         # Avoid division by zero
         if max_val == min_val:
             return torch.zeros_like(spec)  # Return a zero tensor if all values are the same
 
         # Normalize the spectrogram
         normalized_spec = (spec - min_val) / (max_val - min_val)
-        
+
         return normalized_spec
 
 
