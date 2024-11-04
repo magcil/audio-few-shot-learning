@@ -1,6 +1,5 @@
 import os
 import sys
-import json
 from typing import Optional
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -8,14 +7,84 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import matplotlib.pyplot as plt
 import torch
 import torchaudio.transforms as T
+import numpy as np
 
 
 class SpecAugment():
 
-    def __init__(self, time_mask_param: Optional[int] = 15, freq_mask_param: Optional[int] = 15, W: Optional[int] = 50):
+    def __init__(self,
+                 time_mask_param: Optional[int] = 15,
+                 freq_mask_param: Optional[int] = 15,
+                 W: Optional[int] = 50,
+                 freq_num_mask=1,
+                 time_num_mask=1,
+                 mask_value=0,
+                 p=0.1):
         self.time_mask_param = time_mask_param
         self.W = W
         self.freq_mask_param = freq_mask_param
+        self.freq_num_mask = freq_num_mask
+        self.time_num_mask = time_num_mask
+        self.mask_value = mask_value
+        self.p = p
+
+    def frequency_mask(self, spec):
+        """
+        Apply frequency masking to a spectrogram.
+        
+        Parameters:
+            spec (torch.Tensor): Input spectrogram of shape [batch_size, 1, 128, time].
+            F (int): Maximum frequency mask length.
+            num_masks (int): Number of frequency masks to apply.
+            mask_value (float): Value to fill the masked area with.
+
+        Returns:
+            torch.Tensor: Spectrogram with frequency masking applied.
+        """
+        batch_size, _, _, time = spec.shape
+        masked_spec = spec.clone()  # Clone to preserve original spectrogram
+
+        for _ in range(self.freq_num_mask):
+            # Randomly choose a frequency band to mask
+            f = np.random.randint(1, self.freq_mask_param + 1)  # Mask length should be at least 1
+            f0 = np.random.randint(0, 128 - f)  # Starting frequency index
+
+            # Apply the mask
+            masked_spec[:, :, f0:f0 + f, :] = self.mask_value
+
+        return masked_spec
+
+    def time_mask(self, spec):
+        """
+        Apply time masking to a spectrogram.
+
+        Parameters:
+            spec (torch.Tensor): Input spectrogram of shape [batch_size, 1, 128, time].
+            T (int): Maximum time mask length.
+            num_masks (int): Number of time masks to apply.
+            mask_value (float): Value to fill the masked area with.
+            p (float): Proportion of time steps for maximum time mask length.
+
+        Returns:
+            torch.Tensor: Spectrogram with time masking applied.
+        """
+        batch_size, _, _, time = spec.shape
+        masked_spec = spec.clone()  # Clone to preserve original spectrogram
+
+        # Calculate maximum allowed time mask length
+        max_time_mask_length = int(self.p * time)
+
+        for _ in range(self.time_num_mask):
+            # Randomly choose a time band to mask
+            t = np.random.randint(1,
+                                  min(self.time_mask_param, max_time_mask_length) +
+                                  1)  # Mask length should be at least 1
+            t0 = np.random.randint(0, time - t)  # Starting time index
+
+            # Apply the mask
+            masked_spec[:, :, :, t0:t0 + t] = self.mask_value
+
+        return masked_spec
 
     def h_poly(self, t):
         tt = t.unsqueeze(-2)**torch.arange(4, device=t.device).view(-1, 1)
@@ -76,12 +145,9 @@ class SpecAugment():
 
     def apply(self, spectrogram):
         original_spectrogram = spectrogram.clone()
-        time_masking = T.TimeMasking(time_mask_param=self.time_mask_param)
-        freq_masking = T.FrequencyMasking(freq_mask_param=self.freq_mask_param)
-
         augmentation1 = self.time_warp(original_spectrogram.clone(), W=self.W)
-        augmentation2 = time_masking(original_spectrogram.clone())
-        augmentation3 = freq_masking(original_spectrogram.clone())
+        augmentation2 = self.time_mask(original_spectrogram.clone())
+        augmentation3 = self.frequency_mask(original_spectrogram.clone())
 
         # Collect the original spectrogram and augmentations
         spec_list = [original_spectrogram, augmentation1, augmentation2, augmentation3]

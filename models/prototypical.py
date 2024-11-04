@@ -77,11 +77,15 @@ class ContrastivePrototypicalNetworks(FewShotClassifier):
             query_features = self.l2_distance_to_prototypes(query_features)
         return query_features
 
-    def contrastive_forward(self):
+    def contrastive_forward(self, project_prototypes):
         shuffled_features = self.shuffle_augmentations(self.query_feature_list)
         shuffled_features = self.attention_model(shuffled_features)
         projected_features = self.projection_head(shuffled_features)
-        return projected_features
+        if project_prototypes == True:
+            projected_prototypes = self.projection_head(self.prototypes)
+        else:
+            projected_prototypes = self.prototypes
+        return projected_features, projected_prototypes
 
     @staticmethod
     def is_transductive() -> bool:
