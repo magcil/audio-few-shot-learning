@@ -59,6 +59,7 @@ def evaluate_on_one_task(
 
     return number_of_correct_predictions, len(query_labels)
 
+
 def evaluate(
     model,
     data_loader: DataLoader,
@@ -117,6 +118,7 @@ def evaluate(
 
     return mean_accuracy, std_accuracy
 
+
 def prototypical_training_loop(model, training_loader, validation_loader, optimizer, device, loss_function, epochs,
                                patience, train_scheduler, experiment_folder):
     best_validation_accuracy = 0
@@ -144,5 +146,5 @@ def prototypical_training_loop(model, training_loader, validation_loader, optimi
 
 
 def prototypical_testing_loop(trained_model, testing_loader, device):
-    test_accuracy,accuracy_std = evaluate(model=trained_model, data_loader=testing_loader, device=device)
+    test_accuracy, accuracy_std = evaluate(model=trained_model, data_loader=testing_loader, device=device)
     return {"test_accuracy": test_accuracy, "test_accuracy_std": accuracy_std}

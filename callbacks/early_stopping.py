@@ -59,7 +59,8 @@ class EarlyStopping:
     def save_checkpoint(self, val_accuracy, model, epoch):
         """Saves model when validation accuracy increases."""
         if self.verbose:
-            increase = (val_accuracy - self.val_accuracy_max) / self.val_accuracy_max * 100 if self.val_accuracy_max > 0 else 0
+            increase = (val_accuracy -
+                        self.val_accuracy_max) / self.val_accuracy_max * 100 if self.val_accuracy_max > 0 else 0
             increased_txt = (Colors.GREEN + f"({increase:.2f}%)" + Colors.ENDC if increase > 0 else Colors.RED +
                              f"({increase:.2f}%)" + Colors.ENDC)
             self.trace_func(

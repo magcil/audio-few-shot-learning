@@ -9,15 +9,17 @@ import torch
 import torchaudio.transforms as T
 import numpy as np
 
+
 class SpecAugment():
 
-    def __init__(self, time_mask_param: Optional[int] = 15, 
-                freq_mask_param: Optional[int] = 15,
-                W: Optional[int] = 50,
-                freq_num_mask =1, 
-                time_num_mask = 1, 
-                mask_value = 0,
-                p=0.1):
+    def __init__(self,
+                 time_mask_param: Optional[int] = 15,
+                 freq_mask_param: Optional[int] = 15,
+                 W: Optional[int] = 50,
+                 freq_num_mask=1,
+                 time_num_mask=1,
+                 mask_value=0,
+                 p=0.1):
         self.time_mask_param = time_mask_param
         self.W = W
         self.freq_mask_param = freq_mask_param
@@ -25,7 +27,8 @@ class SpecAugment():
         self.time_num_mask = time_num_mask
         self.mask_value = mask_value
         self.p = p
-    def frequency_mask(self,spec):
+
+    def frequency_mask(self, spec):
         """
         Apply frequency masking to a spectrogram.
         
@@ -40,7 +43,7 @@ class SpecAugment():
         """
         batch_size, _, _, time = spec.shape
         masked_spec = spec.clone()  # Clone to preserve original spectrogram
-        
+
         for _ in range(self.freq_num_mask):
             # Randomly choose a frequency band to mask
             f = np.random.randint(1, self.freq_mask_param + 1)  # Mask length should be at least 1
@@ -48,10 +51,10 @@ class SpecAugment():
 
             # Apply the mask
             masked_spec[:, :, f0:f0 + f, :] = self.mask_value
-            
+
         return masked_spec
 
-    def time_mask(self,spec):
+    def time_mask(self, spec):
         """
         Apply time masking to a spectrogram.
 
@@ -67,18 +70,20 @@ class SpecAugment():
         """
         batch_size, _, _, time = spec.shape
         masked_spec = spec.clone()  # Clone to preserve original spectrogram
-        
+
         # Calculate maximum allowed time mask length
         max_time_mask_length = int(self.p * time)
 
         for _ in range(self.time_num_mask):
             # Randomly choose a time band to mask
-            t = np.random.randint(1, min(self.time_mask_param, max_time_mask_length) + 1)  # Mask length should be at least 1
+            t = np.random.randint(1,
+                                  min(self.time_mask_param, max_time_mask_length) +
+                                  1)  # Mask length should be at least 1
             t0 = np.random.randint(0, time - t)  # Starting time index
 
             # Apply the mask
             masked_spec[:, :, :, t0:t0 + t] = self.mask_value
-            
+
         return masked_spec
 
     def h_poly(self, t):
