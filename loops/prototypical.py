@@ -133,7 +133,7 @@ def prototypical_training_loop(model, training_loader, validation_loader, optimi
                                                loss_function=loss_function)
 
         validation_accuracy,accuracy_std = evaluate(model=model, data_loader=validation_loader, device=device)
-        ear_stopping(val_loss=1 - validation_accuracy, model=model, epoch=epoch)
+        ear_stopping(val_accuracy= validation_accuracy, model=model, epoch=epoch)
         if ear_stopping.early_stop:
             print("Early Stopping.")
             break

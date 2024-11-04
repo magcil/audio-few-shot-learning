@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader
 from torch.optim import Optimizer
 import torch
 from loops.prototypical import evaluate
-from callbacks.early_stopping import EarlyStopping_val
+from callbacks.early_stopping import EarlyStopping
 import torch.nn.functional as F
 
 def training_epoch(model, data_loader: DataLoader, optimizer: Optimizer, device, fsl_loss_fn, cpl_loss_fn, l_param , project_prototypes, normalize_prototypes):
@@ -52,7 +52,7 @@ def training_epoch(model, data_loader: DataLoader, optimizer: Optimizer, device,
 def contrastive_training_loop(model, training_loader, validation_loader, optimizer, device, fsl_loss_fn, cpl_loss_fn,
                               l_param, epochs, train_scheduler, patience, results_path , project_prototypes, normalize_prototypes):
 
-    ear_stopping = EarlyStopping_val(path=os.path.join(PROJECT_PATH, "experiments", results_path, "model.pt"),
+    ear_stopping = EarlyStopping(path=os.path.join(PROJECT_PATH, "experiments", results_path, "model.pt"),
                                  patience=patience,
                                  verbose=True)
 
