@@ -107,12 +107,12 @@ if __name__ == "__main__":
     except:
         Exception("Already exists")
 
-    backbone = EncoderModule(encoder_str=encoder_str, model_config=model_config)
+    backbone = EncoderModule(experiment_config= experiment_config, model_config=model_config)
     attention = SelfAttention(model_config=model_config)
     projection = ProjectionHead(model_config=model_config)
     few_shot_model = ContrastivePrototypicalNetworks(backbone=backbone,
-                                                     attention_model=attention,
-                                                     projection_head=projection).to(device)
+                                                    attention_model=attention,
+                                                    projection_head=projection).to(device)
     fsl_loss = FSL_Loss().to(device)
     cpl_loss = CPL_Loss(T=t_param, M=m_param).to(device)
 
@@ -123,19 +123,19 @@ if __name__ == "__main__":
     project_prototypes = experiment_config['project_prototypes']
     normalize_prototypes = experiment_config['normalize_prototypes']
     trained_model = contrastive_training_loop(model=few_shot_model,
-                                              training_loader=train_loader,
-                                              validation_loader=val_loader,
-                                              optimizer=train_optimizer,
-                                              device=device,
-                                              fsl_loss_fn=fsl_loss,
-                                              cpl_loss_fn=cpl_loss,
-                                              l_param=l_param,
-                                              epochs=epochs,
-                                              train_scheduler=train_scheduler,
-                                              patience=patience,
-                                              results_path=experiment_folder,
-                                              project_prototypes=project_prototypes,
-                                              normalize_prototypes=normalize_prototypes)
+                                            training_loader=train_loader,
+                                            validation_loader=val_loader,
+                                            optimizer=train_optimizer,
+                                            device=device,
+                                            fsl_loss_fn=fsl_loss,
+                                            cpl_loss_fn=cpl_loss,
+                                            l_param=l_param,
+                                            epochs=epochs,
+                                            train_scheduler=train_scheduler,
+                                            patience=patience,
+                                            results_path=experiment_folder,
+                                            project_prototypes=project_prototypes,
+                                            normalize_prototypes=normalize_prototypes)
     print(trained_model)
     print("Starting to test")
 

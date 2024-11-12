@@ -37,8 +37,6 @@ def training_epoch(model, data_loader: DataLoader, optimizer: Optimizer, device,
                 normalize_prototypes = False
             if normalize_prototypes == True:
                 prototypes = F.normalize(prototypes, p=2.0, dim=1, eps=1e-12, out=None)
-            print("prototypes", torch.norm(prototypes, p=2, dim=1))
-            print("cpl_query_features", torch.norm(cpl_query_features, p=2, dim=1))
             cpl_loss = cpl_loss_fn(prototypes, cpl_query_features, query_labels.to(device))
             final_loss = fsl_loss + l_param * cpl_loss
             final_loss.backward()

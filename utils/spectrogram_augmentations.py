@@ -13,20 +13,14 @@ import numpy as np
 class SpecAugment():
 
     def __init__(self,
-                 time_mask_param: Optional[int] = 15,
-                 freq_mask_param: Optional[int] = 15,
-                 W: Optional[int] = 50,
-                 freq_num_mask=1,
-                 time_num_mask=1,
-                 mask_value=0,
-                 p=0.1):
-        self.time_mask_param = time_mask_param
-        self.W = W
-        self.freq_mask_param = freq_mask_param
-        self.freq_num_mask = freq_num_mask
-        self.time_num_mask = time_num_mask
-        self.mask_value = mask_value
-        self.p = p
+                 experiment_config):
+        self.time_mask_param = experiment_config['mask_param']
+        self.W = experiment_config['W']
+        self.freq_mask_param = experiment_config['mask_param']
+        self.freq_num_mask = experiment_config['num_mask']
+        self.time_num_mask = experiment_config['num_mask']
+        self.mask_value = experiment_config['mask_value']
+        self.p = experiment_config['p']
 
     def frequency_mask(self, spec):
         """
