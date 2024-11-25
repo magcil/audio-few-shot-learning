@@ -8,19 +8,20 @@ import matplotlib.pyplot as plt
 import torch
 import torchaudio.transforms as T
 import numpy as np
-
+import audiomentations as Au
+import json
 
 class SpecAugment():
 
     def __init__(self,
                  experiment_config):
-        self.time_mask_param = experiment_config['mask_param']
-        self.W = experiment_config['W']
-        self.freq_mask_param = experiment_config['mask_param']
-        self.freq_num_mask = experiment_config['num_mask']
-        self.time_num_mask = experiment_config['num_mask']
-        self.mask_value = experiment_config['mask_value']
-        self.p = experiment_config['p']
+        self.time_mask_param = experiment_config['specaug_params']['mask_param']
+        self.W = experiment_config['specaug_params']['W']
+        self.freq_mask_param = experiment_config['specaug_params']['mask_param']
+        self.freq_num_mask = experiment_config['specaug_params']['num_mask']
+        self.time_num_mask = experiment_config['specaug_params']['num_mask']
+        self.mask_value = experiment_config['specaug_params']['mask_value']
+        self.p = experiment_config['specaug_params']['p']
 
     def frequency_mask(self, spec):
         """
@@ -167,3 +168,49 @@ class SpecAugment():
         if save:
             plt.savefig(prefix)
         plt.show()
+
+class WaveAugment():
+
+    def __init__(self,experiment_config):
+        self.params = experiment_config['waveaug_params']
+        self.augmentations = self.define_augmentations()
+
+    def define_augmentations(self):
+            augment = Au.Compose([Au.AddGaussianNoise(min_amplitude = self.params['gaussian_min_amplitude'],
+                                                 max_amplitude = self.params['gaussian_max_amplitude'],
+                                                 p = self.params['gaussian_p']),
+
+            Au.TimeStretch(min_rate=self.params["timestretch_min_rate"],
+                    max_rate=self.params["timestretch_max_rate"],
+                    p=self.params["timestretch_p"]),
+        
+            Au.PitchShift(min_semitones=self.params["pitchshift_min_semitones"],
+                    max_semitones=self.params["pitchshift_max_semitones"],
+                    p=self.params["pitchshift_p"]),
+            
+            Au.Shift(p=self.params["shift_p"]),
+
+            Au.Aliasing(min_sample_rate=self.params["min_sample_rate"],
+                    max_sample_rate=self.params["max_sample_rate"],
+                    p=self.params["aliasing_p"]),
+
+            Au.LowPassFilter(min_cutoff_freq=self.params["min_cutoff_freq"],
+                  max_cutoff_freq=self.params["max_cutoff_freq"],
+                  p=self.params["lowpass_p"]),
+
+            Au.TimeMask(min_band_part=self.params["min_band_part"],
+                  max_band_part=self.params["max_band_part"],
+                  p=self.params["timemask_p"])])
+            return augment
+
+    def apply_augmentations(self,waveform):
+        augmented_waveform = self.augmentations(samples = waveform, sample_rate = 16000)
+        return augmented_waveform
+
+        
+if __name__ == '__main__':
+    pass
+
+
+
+    
