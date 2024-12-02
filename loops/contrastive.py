@@ -94,15 +94,6 @@ def contrastive_testing_loop(trained_model, testing_loader, device):
     return {"test_accuracy": test_accuracy, "test_accuracy_std": accuracy_std}
 
 
-from collections import Counter
-import numpy as np
-
-from collections import Counter
-import numpy as np
-
-from collections import Counter
-import numpy as np
-
 def calculate_majority_vote_accuracy(predicted_labels, spectrogram_ids, query_labels, posterior_values, tie_strategy="min_label"):
     """
     Calculate accuracy using majority voting with optional tie-breaking strategies.
@@ -180,7 +171,6 @@ def calculate_majority_vote_accuracy(predicted_labels, spectrogram_ids, query_la
 
 
 
-
 def multisegment_testing_loop(test_dataset,n_classes, k_support, k_query, num_test_tasks, trained_model, device, tie_strategy):
     list_of_accuracies = []
     for i in range(num_test_tasks):
@@ -197,7 +187,6 @@ def multisegment_testing_loop(test_dataset,n_classes, k_support, k_query, num_te
         trained_model.process_support_set(support_set, support_labels)
         with torch.no_grad():
             predictions = trained_model(query_set, inference=True)
-            
             predicted_labels = torch.max(predictions,1)[1]
             posterior_values = torch.max(predictions,1)[0]
             task_accuracy = calculate_majority_vote_accuracy(predicted_labels = predicted_labels, spectrogram_ids = spectrogram_ids, query_labels = query_labels,tie_strategy = tie_strategy, posterior_values = posterior_values)
