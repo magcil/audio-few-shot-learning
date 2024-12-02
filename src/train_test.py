@@ -7,9 +7,9 @@ import argparse
 from datasets.task_sampler import TaskSampler
 from datasets.datasets import MetaAudioDataset
 from torch.utils.data import DataLoader
-from models.main_modules import EncoderModule, SelfAttention, ProjectionHead
+from models.main_modules import EncoderModule,SelfAttention,ProjectionHead
 from models.prototypical import ContrastivePrototypicalNetworks
-from loops.contrastive import contrastive_testing_loop, contrastive_training_loop
+from loops.contrastive import contrastive_training_loop, multisegment_testing_loop,contrastive_testing_loop
 from torch.optim.lr_scheduler import MultiStepLR
 from loops.loss import FSL_Loss, CPL_Loss
 import json
@@ -51,6 +51,8 @@ if __name__ == "__main__":
     n_way = experiment_config['n_way']
     n_shot = experiment_config['n_shot']
     n_query = experiment_config['n_query']
+    multi_segm = experiment_config['multi_segm']
+    tie_strategy = experiment_config['tie_strategy']
     epochs = experiment_config['num_epochs']
     n_training_tasks = experiment_config['n_training_tasks']
     n_testing_tasks = experiment_config['n_testing_tasks']
@@ -63,15 +65,12 @@ if __name__ == "__main__":
 
     train_set = MetaAudioDataset(root=dataset_path, split='train')
     val_set = MetaAudioDataset(root=dataset_path, split='valid')
-    test_set = MetaAudioDataset(root=dataset_path, split='test')
-
+    test_set = MetaAudioDataset(root=dataset_path, split='test', multi_segm = multi_segm)
     ## Initialize Samplers
     train_sampler = TaskSampler(train_set, n_way=n_way, n_shot=n_shot, n_query=n_query, n_tasks=n_training_tasks)
     val_sampler = TaskSampler(val_set, n_way=n_way, n_shot=n_shot, n_query=n_query, n_tasks=n_training_tasks)
-    test_sampler = TaskSampler(test_set, n_way=n_way, n_shot=n_shot, n_query=n_query, n_tasks=n_testing_tasks)
-
+    
     # ## Initialize DataLoaders
-
     train_loader = DataLoader(
         train_set,
         batch_sampler=train_sampler,
@@ -85,13 +84,15 @@ if __name__ == "__main__":
         pin_memory=True,
         collate_fn=val_sampler.episodic_collate_fn,
     )
-
-    test_loader = DataLoader(
-        test_set,
-        batch_sampler=test_sampler,
-        pin_memory=True,
-        collate_fn=test_sampler.episodic_collate_fn,
-    )
+    if multi_segm == False:
+        
+        test_sampler = TaskSampler(test_set, n_way=n_way, n_shot=n_shot, n_query=n_query, n_tasks=n_testing_tasks)
+        test_loader = DataLoader(
+            test_set,
+            batch_sampler=test_sampler,
+            pin_memory=True,
+            collate_fn=test_sampler.episodic_collate_fn,
+        )
 
     ## Initialize Model, loss ,etc
     encoder_str = experiment_config['encoder_name']
@@ -115,7 +116,6 @@ if __name__ == "__main__":
                                                     projection_head=projection).to(device)
     fsl_loss = FSL_Loss().to(device)
     cpl_loss = CPL_Loss(T=t_param, M=m_param).to(device)
-
     train_optimizer = torch.optim.Adam(few_shot_model.parameters(), lr=lr)
     ## Initialize scheduler
     train_scheduler = MultiStepLR(train_optimizer, milestones=scheduler_milestones, gamma=scheduler_gamma)
@@ -138,6 +138,14 @@ if __name__ == "__main__":
                                             normalize_prototypes=normalize_prototypes)
     print(trained_model)
     print("Starting to test")
+    if multi_segm == False:
+        msg = contrastive_testing_loop(trained_model=trained_model, testing_loader=test_loader, device=device)
 
-    msg = contrastive_testing_loop(trained_model=trained_model, testing_loader=test_loader, device=device)
+    else:
+       msg =  multisegment_testing_loop(test_dataset = test_set,
+                                        n_classes = n_way, 
+                                        k_support = n_shot, 
+                                        k_query = n_query, 
+                                        num_test_tasks = n_testing_tasks,
+                                        trained_model = trained_model, device = device, tie_strategy = tie_strategy)
     print(msg)
