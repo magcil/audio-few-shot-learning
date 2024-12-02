@@ -260,45 +260,8 @@ def prepare_stacked_support(support_set, sampled_classes, k_support):
 
     return stacked_support, support_labels
 
+
 def prepare_stacked_query(query_set, sampled_classes):
-    """
-    Stack all query spectrograms into a single tensor and create corresponding labels.
-
-    Args:
-        query_set: List of query spectrograms for each class.
-                   Shape: [n_classes, k_query, num_segments, 1, freq_bins, time_bins].
-        sampled_classes: List of class labels corresponding to the query_set indices.
-        k_query: Number of query shots per class.
-
-    Returns:
-        stacked_query: Stacked tensor of shape [total_num_segments, 1, freq_bins, time_bins].
-        query_labels: Corresponding labels of shape [total_num_segments].
-    """
-    stacked_query = []
-    query_labels = []
-
-    for class_idx, class_queries in enumerate(query_set):
-        for query_shot in class_queries:
-            # query_shot is of shape [num_segments, 1, freq_bins, time_bins]
-            num_segments = query_shot.shape[0]
-
-            # Add all spectrograms in this query_shot to the stack
-            stacked_query.append(query_shot)  # Append [num_segments, 1, freq_bins, time_bins]
-
-            # Add corresponding labels for each segment in the shot
-            query_labels.extend([sampled_classes[class_idx]] * num_segments)
-
-    # Concatenate all spectrograms along dimension 0
-    stacked_query = torch.cat(stacked_query, dim=0)  # Shape: [total_num_segments, 1, freq_bins, time_bins]
-
-    # Convert query_labels to a tensor
-    query_labels = torch.tensor(query_labels)  # Shape: [total_num_segments]
-
-    return stacked_query, query_labels
-
-
-
-def prepare_stacked_query1(query_set, sampled_classes):
     """
     Stack all query spectrograms into a single tensor and create corresponding labels.
     Additionally, track which query segments come from the same spectrogram.
@@ -349,7 +312,7 @@ def prepare_stacked_query1(query_set, sampled_classes):
 def generate_support_and_query(dataset, n_classes, k_support, k_query):
     support_set, query_set, sampled_classes =  sample_support_and_query(dataset = dataset, n_classes = n_classes, k_support = k_support, k_query = k_query)
     stacked_support_set, support_labels = prepare_stacked_support(support_set = support_set, sampled_classes = sampled_classes, k_support=k_support)
-    stacked_query_set, query_labels,spectrogram_ids = prepare_stacked_query1(query_set = query_set, sampled_classes = sampled_classes)
+    stacked_query_set, query_labels,spectrogram_ids = prepare_stacked_query(query_set = query_set, sampled_classes = sampled_classes)
 
     return stacked_support_set, support_labels, stacked_query_set, query_labels,spectrogram_ids
 
