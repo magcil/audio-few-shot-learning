@@ -19,15 +19,7 @@ class TaskSampler(Sampler):
     n_way classes, and then sample support and query images from these classes.
     """
 
-    def __init__(
-        self,
-        dataset: FewShotDataset,
-        n_way: int,
-        n_shot: int,
-        n_query: int,
-        n_tasks: int
-    
-    ):
+    def __init__(self, dataset: FewShotDataset, n_way: int, n_shot: int, n_query: int, n_tasks: int):
         """
         Args:
             dataset: dataset from which to sample classification tasks. Must have implement get_labels() from
@@ -178,34 +170,34 @@ def sample_support_and_query(dataset, n_classes, k_support, k_query):
         sampled_classes: List of sampled class labels (mapped to 0, ..., n_classes-1).
     """
     # Map from class names to numeric labels
-    class_to_label = dataset.class_to_label 
+    class_to_label = dataset.class_to_label
     # Get unique numeric class labels
     class_labels = list(class_to_label.values())
     # Randomly sample n classes and sort them
-    sampled_classes = sorted(random.sample(class_labels, n_classes))  
+    sampled_classes = sorted(random.sample(class_labels, n_classes))
     # Map sampled class labels to 0, ..., n_classes-1
     remapped_label_mapping = {original_label: new_label for new_label, original_label in enumerate(sampled_classes)}
     support_set = []
     query_set = []
-    
+
     for class_label in sampled_classes:
         # Get the class name for this numeric label
         class_name = {v: k for k, v in class_to_label.items()}[class_label]
-        
+
         # Get all spectrograms for this class using index_column
         class_indices = dataset.data_df[dataset.data_df['label'] == class_name]['index_column'].tolist()
         # Shuffle indices for random sampling
         random.shuffle(class_indices)
-        
+
         # Ensure enough indices for support and query sets
         if len(class_indices) < k_support + k_query:
             raise ValueError(f"Not enough samples for class {class_name}. "
                              f"Available: {len(class_indices)}, required: {k_support + k_query}")
-        
+
         # Split indices into support and query sets
         support_indices = class_indices[:k_support]
         query_indices = class_indices[k_support:k_support + k_query]
-        
+
         # Create support set for this class
         support_spectrograms = []
         for idx in support_indices:
@@ -216,19 +208,20 @@ def sample_support_and_query(dataset, n_classes, k_support, k_query):
                 random_pick = random.randint(0, spectrogram.shape[0] - 1)
                 chosen_spectrogram = spectrogram[random_pick].unsqueeze(0).unsqueeze(0)
                 support_spectrograms.append(chosen_spectrogram)
-        
+
         # Create query set for this class
         query_shots = []
         for idx in query_indices:
             spectrogram, label = dataset[idx]  # Use __getitem__, original shape preserved
             query_shots.append(spectrogram.unsqueeze(1))  # Shape: [num_specs, 128, 157]
-        
+
         # Append to the final sets
         support_set.append(support_spectrograms)  # Shape: [k_support, 1, 128, 157]
         query_set.append(query_shots)  # Shape: [k_query, num_specs, 128, 157]
     # Replace sampled_classes with remapped labels
-    sampled_classes = [remapped_label_mapping[class_label] for class_label in sampled_classes]  
+    sampled_classes = [remapped_label_mapping[class_label] for class_label in sampled_classes]
     return support_set, query_set, sampled_classes
+
 
 def prepare_stacked_support(support_set, sampled_classes, k_support):
     """
@@ -264,7 +257,7 @@ def prepare_stacked_support(support_set, sampled_classes, k_support):
 def prepare_stacked_query(query_set, sampled_classes):
     """
     Stack all query spectrograms into a single tensor and create corresponding labels.
-    Additionally, track which query segments come from the same spectrogram.
+    Additionally, track which query segments come from the same audio file.
 
     Args:
         query_set: List of query spectrograms for each class.
@@ -310,10 +303,14 @@ def prepare_stacked_query(query_set, sampled_classes):
 
 
 def generate_support_and_query(dataset, n_classes, k_support, k_query):
-    support_set, query_set, sampled_classes =  sample_support_and_query(dataset = dataset, n_classes = n_classes, k_support = k_support, k_query = k_query)
-    stacked_support_set, support_labels = prepare_stacked_support(support_set = support_set, sampled_classes = sampled_classes, k_support=k_support)
-    stacked_query_set, query_labels,spectrogram_ids = prepare_stacked_query(query_set = query_set, sampled_classes = sampled_classes)
+    support_set, query_set, sampled_classes = sample_support_and_query(dataset=dataset,
+                                                                       n_classes=n_classes,
+                                                                       k_support=k_support,
+                                                                       k_query=k_query)
+    stacked_support_set, support_labels = prepare_stacked_support(support_set=support_set,
+                                                                  sampled_classes=sampled_classes,
+                                                                  k_support=k_support)
+    stacked_query_set, query_labels, spectrogram_ids = prepare_stacked_query(query_set=query_set,
+                                                                             sampled_classes=sampled_classes)
 
-    return stacked_support_set, support_labels, stacked_query_set, query_labels,spectrogram_ids
-
-
+    return stacked_support_set, support_labels, stacked_query_set, query_labels, spectrogram_ids

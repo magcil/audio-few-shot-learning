@@ -32,7 +32,6 @@ class MetaAudioDataset(FewShotDataset):
         self.class_names = self.data_df.label.unique()
         self.class_to_label = {v: k for k, v in enumerate(self.class_names)}
         self.labels = self.get_labels()
-        
 
     def __len__(self):
         return len(self.data_df)
@@ -78,7 +77,7 @@ class MetaAudioDataset(FewShotDataset):
     def get_labels(self) -> List[int]:
         return list(self.data_df.label.map(self.class_to_label))
 
-    def normalize_spectrogram(self,spec):
+    def normalize_spectrogram(self, spec):
         """
         Normalize a spectrogram or a batch of spectrograms to the range [0, 1].
 
@@ -114,6 +113,6 @@ class MetaAudioDataset(FewShotDataset):
 
 
 if __name__ == '__main__':
-    data = MetaAudioDataset(root='/data/FSD2018', split='train',multi_segm = True)
+    data = MetaAudioDataset(root='/data/FSD2018', split='train', multi_segm=True)
     print(data[0])
     print(data[0][0].shape)

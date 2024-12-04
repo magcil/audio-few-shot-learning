@@ -72,7 +72,7 @@ def contrastive_training_loop(model, training_loader, validation_loader, optimiz
             l_param=l_param,
             project_prototypes=project_prototypes,
             normalize_prototypes=normalize_prototypes)
-        
+
         validation_accuracy, validation_accuracy_std = evaluate(model=model,
                                                                 data_loader=validation_loader,
                                                                 device=device)
@@ -94,7 +94,11 @@ def contrastive_testing_loop(trained_model, testing_loader, device):
     return {"test_accuracy": test_accuracy, "test_accuracy_std": accuracy_std}
 
 
-def calculate_majority_vote_accuracy(predicted_labels, spectrogram_ids, query_labels, posterior_values, tie_strategy="min_label"):
+def calculate_majority_vote_accuracy(predicted_labels,
+                                     spectrogram_ids,
+                                     query_labels,
+                                     posterior_values,
+                                     tie_strategy="min_label"):
     """
     Calculate accuracy using majority voting with optional tie-breaking strategies.
 
@@ -109,10 +113,12 @@ def calculate_majority_vote_accuracy(predicted_labels, spectrogram_ids, query_la
         accuracy: Float, the accuracy based on majority vote.
     """
     # Ensure tensors are on the CPU and convert to numpy arrays
-    predicted_labels = predicted_labels.cpu().numpy() if isinstance(predicted_labels, torch.Tensor) else predicted_labels
+    predicted_labels = predicted_labels.cpu().numpy() if isinstance(predicted_labels,
+                                                                    torch.Tensor) else predicted_labels
     spectrogram_ids = spectrogram_ids.cpu().numpy() if isinstance(spectrogram_ids, torch.Tensor) else spectrogram_ids
     query_labels = query_labels.cpu().numpy() if isinstance(query_labels, torch.Tensor) else query_labels
-    posterior_values = posterior_values.cpu().numpy() if isinstance(posterior_values, torch.Tensor) else posterior_values
+    posterior_values = posterior_values.cpu().numpy() if isinstance(posterior_values,
+                                                                    torch.Tensor) else posterior_values
 
     # Get unique segment IDs
     unique_segments = np.unique(spectrogram_ids)
@@ -124,19 +130,19 @@ def calculate_majority_vote_accuracy(predicted_labels, spectrogram_ids, query_la
     for segment in unique_segments:
         # Get indices of the current segment
         indices = [i for i, seg_id in enumerate(spectrogram_ids) if seg_id == segment]
-        
+
         # Extract predictions, true labels, and posterior values for this segment
         segment_predictions = [int(predicted_labels[i]) for i in indices]
         segment_true_labels = [int(query_labels[i]) for i in indices]
         segment_posteriors = [posterior_values[i] for i in indices]
-        
+
         # Majority vote for predictions
         counts = Counter(segment_predictions)
         max_count = max(counts.values())  # Get the maximum frequency
-        
+
         # Get all labels tied for the maximum count
         tied_labels = [label for label, count in counts.items() if count == max_count]
-        
+
         if len(tied_labels) == 1:
             # No tie, select the label with the highest count
             majority_prediction = tied_labels[0]
@@ -154,13 +160,12 @@ def calculate_majority_vote_accuracy(predicted_labels, spectrogram_ids, query_la
                         majority_prediction = label
             else:
                 majority_prediction = tied_labels[0]
-        
+
         # Debugging output to verify logic
-        
 
         # Check the true label consistency (assumes it's the same within a segment)
         true_label = segment_true_labels[0]
-        
+
         # Compare majority prediction to true label
         if majority_prediction == true_label:
             correct_segments += 1
@@ -170,15 +175,13 @@ def calculate_majority_vote_accuracy(predicted_labels, spectrogram_ids, query_la
     return accuracy
 
 
-
-def multisegment_testing_loop(test_dataset,n_classes, k_support, k_query, num_test_tasks, trained_model, device, tie_strategy):
+def multisegment_testing_loop(test_dataset, n_classes, k_support, k_query, num_test_tasks, trained_model, device,
+                              tie_strategy):
     list_of_accuracies = []
     for i in range(num_test_tasks):
         ## Generate a test episode:
-        support_set, support_labels, query_set,query_labels,spectrogram_ids = generate_support_and_query(dataset = test_dataset,
-                                                                                                        n_classes = n_classes,
-                                                                                                        k_support = k_support,
-                                                                                                        k_query =k_query)
+        support_set, support_labels, query_set, query_labels, spectrogram_ids = generate_support_and_query(
+            dataset=test_dataset, n_classes=n_classes, k_support=k_support, k_query=k_query)
         support_set = support_set.to(device)
         support_labels = support_labels.to(device)
         query_set = query_set.to(device)
@@ -187,13 +190,16 @@ def multisegment_testing_loop(test_dataset,n_classes, k_support, k_query, num_te
         trained_model.process_support_set(support_set, support_labels)
         with torch.no_grad():
             predictions = trained_model(query_set, inference=True)
-            predicted_labels = torch.max(predictions,1)[1]
-            posterior_values = torch.max(predictions,1)[0]
-            task_accuracy = calculate_majority_vote_accuracy(predicted_labels = predicted_labels, spectrogram_ids = spectrogram_ids, query_labels = query_labels,tie_strategy = tie_strategy, posterior_values = posterior_values)
+            predicted_labels = torch.max(predictions, 1)[1]
+            posterior_values = torch.max(predictions, 1)[0]
+            task_accuracy = calculate_majority_vote_accuracy(predicted_labels=predicted_labels,
+                                                             spectrogram_ids=spectrogram_ids,
+                                                             query_labels=query_labels,
+                                                             tie_strategy=tie_strategy,
+                                                             posterior_values=posterior_values)
             list_of_accuracies.append(task_accuracy)
     mean_accuracy = np.mean(list_of_accuracies)
     std_accuracy = np.std(list_of_accuracies)
 
-    msg = {"mean_accuracy": mean_accuracy, "accuracy_std":std_accuracy}
+    msg = {"mean_accuracy": mean_accuracy, "accuracy_std": std_accuracy}
     return msg
-
