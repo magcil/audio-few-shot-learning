@@ -7,7 +7,7 @@ import argparse
 from datasets.task_sampler import TaskSampler
 from datasets.datasets import MetaAudioDataset
 from torch.utils.data import DataLoader
-from models.main_modules import EncoderModule, SelfAttention, ProjectionHead
+from models.main_modules import EncoderModule, SelfAttention, ProjectionHead,RelationHead
 from models.prototypical import ContrastivePrototypicalNetworks
 from loops.contrastive import contrastive_training_loop, multisegment_testing_loop, contrastive_testing_loop
 from torch.optim.lr_scheduler import MultiStepLR
@@ -100,6 +100,7 @@ if __name__ == "__main__":
     scheduler_milestones = experiment_config['scheduler_milestones']
     scheduler_gamma = experiment_config['scheduler_gamma']
     experiment_folder = experiment_config['experiment_folder']
+    relation_head = experiment_config["relation_head"]
 
     ## Create the experiment folder in experiments
     experiment_results_folder = f"experiments/{experiment_folder}"
@@ -111,9 +112,14 @@ if __name__ == "__main__":
     backbone = EncoderModule(experiment_config=experiment_config, model_config=model_config)
     attention = SelfAttention(model_config=model_config)
     projection = ProjectionHead(model_config=model_config)
+    if relation_head == True:
+        relation_head = RelationHead(model_config = model_config)
+    else:
+        relation_head = None
     few_shot_model = ContrastivePrototypicalNetworks(backbone=backbone,
                                                      attention_model=attention,
-                                                     projection_head=projection).to(device)
+                                                     projection_head=projection,
+                                                     relation_head=relation_head).to(device)
     fsl_loss = FSL_Loss().to(device)
     cpl_loss = CPL_Loss(T=t_param, M=m_param).to(device)
     train_optimizer = torch.optim.Adam(few_shot_model.parameters(), lr=lr)

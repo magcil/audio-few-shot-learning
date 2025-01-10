@@ -55,7 +55,14 @@ def evaluate_on_one_task(
     model.process_support_set(support_images, support_labels)
     with torch.no_grad():
         predictions = model(query_images, inference=True)
+    if model.relation_head: 
+        relation_scores = predictions.squeeze()
+        print("relation_scores",relation_scores.shape)
+        predicted_classes = torch.argmax(relation_scores, dim=1)
+        print("predicted_classes",predicted_classes)
     number_of_correct_predictions = ((torch.max(predictions, 1)[1] == query_labels).sum().item())
+    print(query_labels)
+    print(number_of_correct_predictions)
 
     return number_of_correct_predictions, len(query_labels)
 

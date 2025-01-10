@@ -34,7 +34,17 @@ def training_epoch(model, data_loader: DataLoader, optimizer: Optimizer, device,
             optimizer.zero_grad()
             model.process_support_set(support_images.to(device), support_labels.to(device))
             query_features = model(query_images.to(device))
-            fsl_loss = fsl_loss_fn(model.prototypes, query_features, query_labels.to(device))
+            if model.relation_head:
+                one_hot_support_labels =  F.one_hot(support_labels,  num_classes = torch.unique(support_labels).numel()).float()
+                one_hot_support_labels = one_hot_support_labels.to(device)
+                one_hot_query_labels = F.one_hot(query_labels,  num_classes = torch.unique(query_labels).numel()).float()
+                one_hot_query_labels = one_hot_query_labels.to(device)
+                relation_scores = query_features
+                fsl_loss_fn =torch.nn.MSELoss()
+                fsl_loss = fsl_loss_fn(relation_scores, one_hot_query_labels)
+            else:
+                fsl_loss = fsl_loss_fn(model.prototypes, query_features, query_labels.to(device))
+
             cpl_query_features, prototypes = model.contrastive_forward(project_prototypes)
             if project_prototypes == True:
                 normalize_prototypes = False

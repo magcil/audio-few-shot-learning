@@ -44,12 +44,13 @@ class PrototypicalNetworks(FewShotClassifier):
 
 class ContrastivePrototypicalNetworks(FewShotClassifier):
 
-    def __init__(self, backbone, attention_model, projection_head, *args, **kwargs):
+    def __init__(self, backbone, attention_model, projection_head, relation_head, *args, **kwargs):
         # Call the parent class constructor and pass the remaining arguments
         super(ContrastivePrototypicalNetworks, self).__init__(*args, **kwargs)
         self.backbone = backbone
         self.attention_model = attention_model
         self.projection_head = projection_head
+        self.relation_head = relation_head
 
     def compute_features(self, images: Tensor) -> Tensor:
         original_feature_list = self.backbone(images)
@@ -72,10 +73,26 @@ class ContrastivePrototypicalNetworks(FewShotClassifier):
         self.query_feature_list = self.compute_query_features(query_images)
         query_features = torch.stack(self.query_feature_list, dim=1)
         query_features = self.attention_model(query_features)
-        self._raise_error_if_features_are_multi_dimensional(query_features)
-        if inference == True:
-            query_features = self.l2_distance_to_prototypes(query_features)
-        return query_features
+        if self.relation_head:
+            prototypes = self.prototypes
+            queries_expanded = query_features.unsqueeze(1).repeat(1, self.prototypes.shape[0], 1)  # Shape: (25, 5, 256)
+            print("queries_expanded",queries_expanded.shape)
+            prototypes_expanded = prototypes.unsqueeze(0).repeat(queries_expanded.shape[0], 1, 1)  # Shape: (25, 5, 256)
+            print("prototypes_expanded", prototypes_expanded.shape)
+            # Concatenate along the feature dimension
+            pairs = torch.cat([queries_expanded, prototypes_expanded], dim=-1)
+            # Flatten the pairs for batch processing
+            pairs_flattened = pairs.view(-1, 512)  # Shape: (25 * 5, 512)
+            # Compute relation scores
+            relation_scores = self.relation_head(pairs_flattened)  # Shape: (25 * 5, 1)
+            # Reshape back to (25, 5)
+            relation_scores = relation_scores.view(25, 5)
+            return relation_scores
+        else:
+            self._raise_error_if_features_are_multi_dimensional(query_features)
+            if inference == True:
+                query_features = self.l2_distance_to_prototypes(query_features)
+            return query_features
 
     def contrastive_forward(self, project_prototypes):
         shuffled_features = self.shuffle_augmentations(self.query_feature_list)

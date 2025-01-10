@@ -260,6 +260,30 @@ class ProjectionHead(nn.Module):
         x_norm = F.normalize(x, p=2.0, dim=1, eps=1e-12, out=None)
 
         return x_norm
+    
+
+class RelationHead(nn.Module):
+
+    def __init__(self, model_config):
+        super(RelationHead, self).__init__()
+        self.input_dim = model_config['Relation']['input_dim']
+        self.hidden_dim1 = model_config['Relation']['hidden_dim1']
+        self.hidden_dim2 = model_config['Relation']['hidden_dim2']
+        self.hidden_dim3 = model_config['Relation']['hidden_dim3']
+        self.output_dim = model_config['Relation']['out_dim']
+
+        self.fc1 = nn.Linear(self.input_dim, self.hidden_dim1)
+        self.fc2 = nn.Linear(self.hidden_dim1, self.hidden_dim2)
+        self.fc3 = nn.Linear(self.hidden_dim2,self.hidden_dim3)
+        self.out = nn.Linear(self.hidden_dim3,self.output_dim)
+
+    def forward(self, x):
+        # Pass through the first layer and apply ReLU activation
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        x = F.relu(self.fc3(x))
+        x = F.sigmoid(self.out(x))
+        return x
 
 
 def get_backbone_model(encoder_name, model_config):
