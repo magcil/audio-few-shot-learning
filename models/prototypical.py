@@ -86,7 +86,7 @@ class ContrastivePrototypicalNetworks(FewShotClassifier):
             # Compute relation scores
             relation_scores = self.relation_head(pairs_flattened)  # Shape: (25 * 5, 1)
             # Reshape back to (25, 5)
-            relation_scores = relation_scores.view(25, 5)
+            relation_scores = relation_scores.view(queries_expanded.shape[0], 5)
             return relation_scores
         else:
             self._raise_error_if_features_are_multi_dimensional(query_features)
