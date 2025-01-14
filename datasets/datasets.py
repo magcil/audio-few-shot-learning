@@ -46,9 +46,17 @@ class MetaAudioDataset(FewShotDataset):
                 spectrogram = spectrogram[rand_int]
                 spectrogram = np.expand_dims(spectrogram, axis=0)
         spectrogram = torch.from_numpy(spectrogram)
-        normalized_spectrogram = self.normalize_spectrogram(spectrogram)
+        mean,std = self.get_normalization_stats()
+        normalized_spectrogram = self.normalize_spectrogram(spectrogram, mean = mean, std = std)
 
         return normalized_spectrogram, self.labels[item]
+    
+    def get_normalization_stats(self):
+        norm_stats = np.load(self.root / "norm_stats"/"glob_norm.npy")
+        mean = norm_stats[0][0][0]
+        std = norm_stats[1][0][0]
+        return mean,std
+
 
     def load_specs(self) -> DataFrame:
         """
@@ -77,14 +85,16 @@ class MetaAudioDataset(FewShotDataset):
     def get_labels(self) -> List[int]:
         return list(self.data_df.label.map(self.class_to_label))
 
-    def normalize_spectrogram(self, spec):
+    def normalize_spectrogram(self, spec, mean=None, std=None):
         """
-        Normalize a spectrogram or a batch of spectrograms to the range [0, 1].
+        Normalize a spectrogram or a batch of spectrograms.
 
         Parameters:
             spec (torch.Tensor): Input spectrogram(s). Shape can be:
                                 - [freq_bins, time_bins] for a single segment
                                 - [num_of_spec, freq_bins, time_bins] for multiple segments.
+            mean (float or torch.Tensor, optional): Precomputed mean value(s). If None, min-max normalization is applied.
+            std (float or torch.Tensor, optional): Precomputed std value(s). If None, min-max normalization is applied.
 
         Returns:
             torch.Tensor: Normalized spectrogram(s) of the same shape as the input.
@@ -94,16 +104,18 @@ class MetaAudioDataset(FewShotDataset):
         if is_single_segment:
             spec = spec.unsqueeze(0)  # Add batch dimension: [1, freq_bins, time_bins]
 
-        # Compute global min and max across all spectrograms
-        min_val = spec.min()
-        max_val = spec.max()
-
-        # Avoid division by zero
-        if max_val == min_val:
-            normalized_spec = torch.zeros_like(spec)  # Return a zero tensor if all values are the same
+        if mean is not None and std is not None:
+            # Z-score normalization using provided mean and std
+            normalized_spec = (spec - mean) / std
         else:
-            # Normalize using global min and max
-            normalized_spec = (spec - min_val) / (max_val - min_val)
+            # Min-max normalization
+            min_val = spec.min()
+            max_val = spec.max()
+
+            if max_val == min_val:
+                normalized_spec = torch.zeros_like(spec)  # Return a zero tensor if all values are the same
+            else:
+                normalized_spec = (spec - min_val) / (max_val - min_val)
 
         # If it was a single segment, remove the batch dimension
         if is_single_segment:
