@@ -7,7 +7,7 @@ import os
 import sys
 import random
 import torch
-
+from typing import Optional
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from models.few_shot_classifier import FewShotClassifier
 
@@ -26,6 +26,7 @@ class PrototypicalNetworks(FewShotClassifier):
     def forward(
         self,
         query_images: Tensor,
+        inference : Optional[bool] = True,
     ) -> Tensor:
         """
         Overrides forward method of FewShotClassifier.
