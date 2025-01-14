@@ -14,7 +14,7 @@ import random
 
 class MetaAudioDataset(FewShotDataset):
 
-    def __init__(self, root: Union[Path, str], split: Optional[str] = None):
+    def __init__(self, root: Union[Path, str], split: Optional[str] = None, multi_segm: Optional[bool] = False):
         """
         Build an MetaAudioDataset class to be used for few shot audio classification on meta-audio datasets
         Args:
@@ -23,6 +23,7 @@ class MetaAudioDataset(FewShotDataset):
         """
         self.root = Path(root)
         self.split = split
+        self.multi_segm = multi_segm
 
         self.data_df = self.load_specs()
 
@@ -40,13 +41,22 @@ class MetaAudioDataset(FewShotDataset):
         if len(spectrogram.shape) == 2:
             spectrogram = np.expand_dims(spectrogram, axis=0)
         if spectrogram.shape[0] != 1:
-            rand_int = random.randint(0, spectrogram.shape[0] - 1)
-            spectrogram = spectrogram[rand_int]
-            spectrogram = np.expand_dims(spectrogram, axis=0)
+            if self.multi_segm == False:
+                rand_int = random.randint(0, spectrogram.shape[0] - 1)
+                spectrogram = spectrogram[rand_int]
+                spectrogram = np.expand_dims(spectrogram, axis=0)
         spectrogram = torch.from_numpy(spectrogram)
-        normalized_spectrogram = self.normalize_spectrogram(spectrogram)
+        mean,std = self.get_normalization_stats()
+        normalized_spectrogram = self.normalize_spectrogram(spectrogram, mean = mean, std = std)
 
         return normalized_spectrogram, self.labels[item]
+    
+    def get_normalization_stats(self):
+        norm_stats = np.load(self.root / "norm_stats"/"glob_norm.npy")
+        mean = norm_stats[0][0][0]
+        std = norm_stats[1][0][0]
+        return mean,std
+
 
     def load_specs(self) -> DataFrame:
         """
@@ -68,36 +78,53 @@ class MetaAudioDataset(FewShotDataset):
             for file in os.listdir(spec_dir / label):
                 df_row = {'label': label, 'filename': file, 'filepath': spec_dir / label / file}
                 spec_df = pd.concat([spec_df, pd.DataFrame([df_row])])
+        spec_df['index_column'] = range(len(spec_df))
 
         return spec_df
 
     def get_labels(self) -> List[int]:
         return list(self.data_df.label.map(self.class_to_label))
 
-    def normalize_spectrogram(self, spec):
+    def normalize_spectrogram(self, spec, mean=None, std=None):
         """
-        Normalize a spectrogram to the range [0, 1].
+        Normalize a spectrogram or a batch of spectrograms.
 
         Parameters:
-            spec (torch.Tensor): Input spectrogram of shape [1, freq_bins, time_bins].
+            spec (torch.Tensor): Input spectrogram(s). Shape can be:
+                                - [freq_bins, time_bins] for a single segment
+                                - [num_of_spec, freq_bins, time_bins] for multiple segments.
+            mean (float or torch.Tensor, optional): Precomputed mean value(s). If None, min-max normalization is applied.
+            std (float or torch.Tensor, optional): Precomputed std value(s). If None, min-max normalization is applied.
 
         Returns:
-            torch.Tensor: Normalized spectrogram.
+            torch.Tensor: Normalized spectrogram(s) of the same shape as the input.
         """
-        # Compute min and max values in the spectrogram
-        min_val = spec.min()
-        max_val = spec.max()
+        # Ensure input is at least 3D for consistent processing
+        is_single_segment = spec.dim() == 2  # Check if it's a single spectrogram
+        if is_single_segment:
+            spec = spec.unsqueeze(0)  # Add batch dimension: [1, freq_bins, time_bins]
 
-        # Avoid division by zero
-        if max_val == min_val:
-            return torch.zeros_like(spec)  # Return a zero tensor if all values are the same
+        if mean is not None and std is not None:
+            # Z-score normalization using provided mean and std
+            normalized_spec = (spec - mean) / std
+        else:
+            # Min-max normalization
+            min_val = spec.min()
+            max_val = spec.max()
 
-        # Normalize the spectrogram
-        normalized_spec = (spec - min_val) / (max_val - min_val)
+            if max_val == min_val:
+                normalized_spec = torch.zeros_like(spec)  # Return a zero tensor if all values are the same
+            else:
+                normalized_spec = (spec - min_val) / (max_val - min_val)
+
+        # If it was a single segment, remove the batch dimension
+        if is_single_segment:
+            normalized_spec = normalized_spec.squeeze(0)
 
         return normalized_spec
 
 
 if __name__ == '__main__':
-    data = MetaAudioDataset(root='/data/BirdClef', split='train')
+    data = MetaAudioDataset(root='/data/FSD2018', split='train', multi_segm=True)
     print(data[0])
+    print(data[0][0].shape)

@@ -7,9 +7,10 @@ import argparse
 from datasets.task_sampler import TaskSampler
 from datasets.datasets import MetaAudioDataset
 from torch.utils.data import DataLoader
-from models.main_modules import EncoderModule, SelfAttention, ProjectionHead
-from models.prototypical import ContrastivePrototypicalNetworks
-from loops.contrastive import contrastive_training_loop, multisegment_testing_loop, contrastive_testing_loop
+from models.main_modules import get_backbone_model
+from models.prototypical import PrototypicalNetworks
+from loops.prototypical import prototypical_testing_loop, prototypical_training_loop
+from loops.contrastive import multisegment_testing_loop
 from torch.optim.lr_scheduler import MultiStepLR
 from loops.loss import FSL_Loss, CPL_Loss
 import json
@@ -65,12 +66,15 @@ if __name__ == "__main__":
 
     train_set = MetaAudioDataset(root=dataset_path, split='train')
     val_set = MetaAudioDataset(root=dataset_path, split='valid')
-    test_set = MetaAudioDataset(root=dataset_path, split='test', multi_segm=multi_segm)
+    test_set = MetaAudioDataset(root=dataset_path, split='test', multi_segm = multi_segm)
+
     ## Initialize Samplers
     train_sampler = TaskSampler(train_set, n_way=n_way, n_shot=n_shot, n_query=n_query, n_tasks=n_training_tasks)
     val_sampler = TaskSampler(val_set, n_way=n_way, n_shot=n_shot, n_query=n_query, n_tasks=n_training_tasks)
+    
 
     # ## Initialize DataLoaders
+
     train_loader = DataLoader(
         train_set,
         batch_sampler=train_sampler,
@@ -85,7 +89,6 @@ if __name__ == "__main__":
         collate_fn=val_sampler.episodic_collate_fn,
     )
     if multi_segm == False:
-
         test_sampler = TaskSampler(test_set, n_way=n_way, n_shot=n_shot, n_query=n_query, n_tasks=n_testing_tasks)
         test_loader = DataLoader(
             test_set,
@@ -108,39 +111,21 @@ if __name__ == "__main__":
     except:
         Exception("Already exists")
 
-    backbone = EncoderModule(experiment_config=experiment_config, model_config=model_config)
-    attention = SelfAttention(model_config=model_config)
-    projection = ProjectionHead(model_config=model_config)
-    few_shot_model = ContrastivePrototypicalNetworks(backbone=backbone,
-                                                     attention_model=attention,
-                                                     projection_head=projection).to(device)
-    fsl_loss = FSL_Loss().to(device)
-    cpl_loss = CPL_Loss(T=t_param, M=m_param).to(device)
+    backbone = get_backbone_model(encoder_name=encoder_str, model_config=model_config)
+    few_shot_model = PrototypicalNetworks(backbone=backbone).to(device)
+    loss_fn = torch.nn.CrossEntropyLoss()
     train_optimizer = torch.optim.Adam(few_shot_model.parameters(), lr=lr)
     ## Initialize scheduler
     train_scheduler = MultiStepLR(train_optimizer, milestones=scheduler_milestones, gamma=scheduler_gamma)
     print("Starting to train")
-    project_prototypes = experiment_config['project_prototypes']
-    normalize_prototypes = experiment_config['normalize_prototypes']
-    trained_model = contrastive_training_loop(model=few_shot_model,
-                                              training_loader=train_loader,
-                                              validation_loader=val_loader,
-                                              optimizer=train_optimizer,
-                                              device=device,
-                                              fsl_loss_fn=fsl_loss,
-                                              cpl_loss_fn=cpl_loss,
-                                              l_param=l_param,
-                                              epochs=epochs,
-                                              train_scheduler=train_scheduler,
-                                              patience=patience,
-                                              results_path=experiment_folder,
-                                              project_prototypes=project_prototypes,
-                                              normalize_prototypes=normalize_prototypes)
+
+    trained_model = prototypical_training_loop(model = few_shot_model, training_loader = train_loader, validation_loader = val_loader, optimizer = train_optimizer,
+                                            device = device, loss_function = loss_fn, epochs = epochs,
+                               patience =  patience, train_scheduler =train_scheduler , experiment_folder = experiment_folder)
     print(trained_model)
     print("Starting to test")
     if multi_segm == False:
-        msg = contrastive_testing_loop(trained_model=trained_model, testing_loader=test_loader, device=device)
-
+        msg = prototypical_testing_loop(trained_model=trained_model, testing_loader=test_loader, device=device)
     else:
         msg = multisegment_testing_loop(test_dataset=test_set,
                                         n_classes=n_way,
@@ -149,5 +134,5 @@ if __name__ == "__main__":
                                         num_test_tasks=n_testing_tasks,
                                         trained_model=trained_model,
                                         device=device,
-                                        tie_strategy=tie_strategy)
+                                        tie_strategy=tie_strategy)        
     print(msg)

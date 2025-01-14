@@ -124,7 +124,7 @@ def prototypical_training_loop(model, training_loader, validation_loader, optimi
     best_validation_accuracy = 0
     ear_stopping = EarlyStopping(patience=patience,
                                  verbose=True,
-                                 path=os.path.join(PROJECT_PATH, "logs", experiment_folder, "model.pt"))
+                                 path=os.path.join(PROJECT_PATH, "experiments", experiment_folder, "model.pt"))
 
     for epoch in range(1, epochs + 1):
         print(f"Epoch: {epoch:03}/{epochs+1:03}")
