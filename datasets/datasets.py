@@ -1,8 +1,9 @@
 from pathlib import Path
-from typing import Callable, List, Optional, Union
+from typing import List, Optional, Union
 import sys
 import os
 import numpy as np
+import librosa
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import torch
@@ -10,60 +11,67 @@ import pandas as pd
 from pandas import DataFrame
 from datasets.few_shot_dataset import FewShotDataset
 import random
+import time
+from utils.augmentations import SpecAugment, WaveAugment
+import json
 
 
 class MetaAudioDataset(FewShotDataset):
 
-    def __init__(self, root: Union[Path, str], split: Optional[str] = None, multi_segm: Optional[bool] = False):
+    def __init__(self, experiment_config,root: Union[Path, str],
+                  split: Optional[str] = None,
+                  ):
         """
         Build an MetaAudioDataset class to be used for few shot audio classification on meta-audio datasets
         Args:
             root: directory of the main dataset folder - eg /data/BirdClef
             split: a string - can be either "train"/ "test" / "validation" 
         """
+        self.experiment_config = experiment_config
         self.root = Path(root)
         self.split = split
-        self.multi_segm = multi_segm
-
+        self.multi_segm = experiment_config['multi_segm']
+        self.input_type = experiment_config['input_type']
         self.data_df = self.load_specs()
-
         self.spectograms = self.data_df.filepath.tolist()
-
         self.class_names = self.data_df.label.unique()
         self.class_to_label = {v: k for k, v in enumerate(self.class_names)}
         self.labels = self.get_labels()
+        self.mean, self.std = self.get_normalization_stats()
+        self.waveaug_use = self.experiment_config['waveaug_params']['use']
+        self.specaug_use = self.experiment_config['specaug_params']['use']
 
     def __len__(self):
         return len(self.data_df)
 
-    def __getitem__(self, item):
-        spectrogram = np.load(self.data_df['filepath'].iloc[item], allow_pickle=True)
-        if len(spectrogram.shape) == 2:
-            spectrogram = np.expand_dims(spectrogram, axis=0)
-        if spectrogram.shape[0] != 1:
-            if self.multi_segm == False:
-                rand_int = random.randint(0, spectrogram.shape[0] - 1)
-                spectrogram = spectrogram[rand_int]
-                spectrogram = np.expand_dims(spectrogram, axis=0)
-        spectrogram = torch.from_numpy(spectrogram)
-        mean,std = self.get_normalization_stats()
-        normalized_spectrogram = self.normalize_spectrogram(spectrogram, mean = mean, std = std)
-
-        return normalized_spectrogram, self.labels[item]
     
+    def __getitem__(self, item):
+        input = np.load(self.data_df['filepath'].iloc[item], allow_pickle=True)
+        if self.input_type == "spec":
+            if len(input.shape) == 2:
+                input = np.expand_dims(input, axis=0)
+            input = torch.from_numpy(input)
+            normalized_input = self.normalize_spectrogram(input, mean = self.mean, std = self.std)
+            normalized_input = normalized_input.unsqueeze(1)
+        elif self.input_type == "wav":
+            normalized_input = input
+        return normalized_input, self.labels[item]
+        
     def get_normalization_stats(self):
         norm_stats = np.load(self.root / "norm_stats"/"glob_norm.npy")
         mean = norm_stats[0][0][0]
         std = norm_stats[1][0][0]
         return mean,std
-
-
+    
     def load_specs(self) -> DataFrame:
         """
         This function will firstly define the desired split based on provided 'split' input. 
         Then it will return a DataFrame with columns filepath,filename,label
         """
-        spec_dir = self.root / "features"
+        if self.input_type == 'wav' :
+            spec_dir = self.root/ "waveforms_npy"
+        else:    
+            spec_dir = self.root / "features"
         splits_file = np.load(self.root / "splits.npy", allow_pickle=True)
 
         ## Splits_file is a list of length 3. At splits_file[0] its the training classes, at splits_file[1] the valid_classes etc
@@ -84,7 +92,7 @@ class MetaAudioDataset(FewShotDataset):
 
     def get_labels(self) -> List[int]:
         return list(self.data_df.label.map(self.class_to_label))
-
+      
     def normalize_spectrogram(self, spec, mean=None, std=None):
         """
         Normalize a spectrogram or a batch of spectrograms.
@@ -122,9 +130,11 @@ class MetaAudioDataset(FewShotDataset):
             normalized_spec = normalized_spec.squeeze(0)
 
         return normalized_spec
-
+    
 
 if __name__ == '__main__':
-    data = MetaAudioDataset(root='/data/FSD2018', split='train', multi_segm=True)
-    print(data[0])
-    print(data[0][0].shape)
+    with open("experiment_config.json", "r") as f:
+        experiment_config = json.load(f)
+
+    data = MetaAudioDataset(experiment_config = experiment_config,root='/data/FSD2018', split='train')
+    print((data[0][0].shape))

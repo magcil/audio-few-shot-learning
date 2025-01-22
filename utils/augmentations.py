@@ -138,7 +138,7 @@ class SpecAugment():
 
         return torch.nn.functional.grid_sample(specs, grid, align_corners=True)
 
-    def apply(self, spectrogram):
+    def apply_augmentations(self, spectrogram):
         original_spectrogram = spectrogram.clone()
         augmentation1 = self.time_warp(original_spectrogram.clone(), W=self.W)
         augmentation2 = self.time_mask(original_spectrogram.clone())
@@ -204,13 +204,195 @@ class WaveAugment():
             return augment
 
     def apply_augmentations(self,waveform):
-        augmented_waveform = self.augmentations(samples = waveform, sample_rate = 16000)
-        return augmented_waveform
+        augmentations = [torch.from_numpy(waveform)]
+        for i in range(self.params['aug_num']):
+            augmented_waveform = self.augmentations(samples = waveform, sample_rate = 16000)
+            augmentations.append(torch.from_numpy(augmented_waveform))
+
+        return augmentations
+    
+
+
+def preprocessing_and_augmentations(experiment_config, item, test = False):
+    read_waveforms = experiment_config['read_waveforms']
+    waveaug_use = experiment_config['waveaug_params']['use']
+    specaug_use = experiment_config['specaug_params']['use']
+
+
+    if read_waveforms == False:
+        if specaug_use == True:
+            augmentation_module = SpecAugment(experiment_config = experiment_config)
+            augmented_item_list = augm_module.apply_augmentations(item)
+        else:
+            augmented_item_list = [item]
+
+    if read_waveforms == True:
+
+
+        if waveaug_use == True:
+            mel_params = {'sr': 16000, 'n_mels':128,'n_fft':1024,'hop_length':512,'power':2.0}
+            augmentation_module = WaveAugment(experiment_config = experiment_config)
+            augmented_item_list = augmentation_module.apply_augmentations(item)
+        else: augmented_item_list = [item]
+
+        ### Now convert to spectrograms
+        spec_list = []
+        if experiment_config['multi_segm'] == False:
+            
+            for wav in augmented_item_list:
+                spec = mel_spec_function(**mel_params)
+                spec_list.append(spec)
+        elif experiment_config['multi_segm'] == True:
+            for wav in augmented_item_list:
+                spec = wav_to_variable_spectrogram(sample = wav, mel_params = mel_params)
+                
+
+                
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+def mel_spec_function(x, sr, n_mels, n_fft, hop_length, power):
+        mel_spec_array = librosa.feature.melspectrogram(y=x,
+                                        sr=sr,
+                                        n_mels=n_mels,
+                                        n_fft=n_fft,
+                                        hop_length=hop_length,
+                                        power=power)
+
+        log_mel_spec = 20.0 / power * np.log10(mel_spec_array + sys.float_info.epsilon)
+        return log_mel_spec
+
+
+
+def wav_to_variable_spectrogram(sample,mel_params):
+    sample = torch.from_numpy(sample)
+    length_s = 5
+    expected_size = length_s * mel_params['sr']
+    # Collets the raw sample splits
+    raw_splits = []
+
+    # If the sample is smaller than expected, we repeat it until we hit the
+    #   mark and then trim back if needed
+    if sample.shape[0] < expected_size:
+        # Calculates the number of repetitions needed of the sample
+        multiply_up = int(np.ceil((expected_size) / sample.shape[0]))
+        sample = sample.repeat((multiply_up, ))
+        # Clips the new sample down as needed
+        sample = sample[:expected_size]
+        # Store or sample in a list to access later
+        raw_splits.append(sample)
+
+    # If the sample is longer than needed, we split it up into its slices
+    elif sample.shape[0] >= expected_size:
+        starting_index = 0
+        while starting_index < sample.shape[0]:
+            to_end = sample.shape[0] - starting_index
+            # If there more than a full snippet sample still available
+            if to_end >= expected_size:
+                split = sample[starting_index:(starting_index + expected_size)]
+                starting_index += expected_size
+                raw_splits.append(split)
+            # If we are at the end of our sample
+            elif to_end < expected_size:
+                # Calculates the number of repetitions needed of the sample
+                multiply_up = int(np.ceil((expected_size) / to_end))
+                split = sample[starting_index:]
+                # Repeats and clips the end sample as needed
+                split = sample.repeat((multiply_up, ))[:expected_size]
+                starting_index = sample.shape[0]
+                raw_splits.append(split)
+
+    mel_splits = []
+    # Now need to convert the raw sample into melspectrogram
+    # Need to convert to numpy and back again
+    for raw in raw_splits:
+        mel_spec = mel_spec_function(raw.numpy(), **mel_params)
+        mel_spec = torch.from_numpy(mel_spec)
+        mel_splits.append(mel_spec)
+
+    x = torch.stack(mel_splits)
+    return x
+    
 
         
 if __name__ == '__main__':
-    pass
+    with open("experiment_config.json", "r") as f:
+        experiment_config = json.load(f)
+
+    augm_module = WaveAugment(experiment_config = experiment_config)
+    wav = np.load("/data/ESC-50-master/waveforms_npy/dog/1-59513-A-0.npy", allow_pickle = True)
+    print(wav.shape)
+    aug_list = augm_module.apply_augmentations(waveform = wav)
+    print(len(aug_list))
+    print(aug_list[0].shape)
+    print(aug_list[1].shape)
+    print(aug_list[2].shape)
+    print(aug_list[3].shape)
+
+    import matplotlib.pyplot as plt
+
+    # Assuming `aug_list` contains 4 arrays to plot
+    fig, axes = plt.subplots(2, 2, figsize=(10, 8))  # Create a 2x2 grid of subplots
+
+    # Plot each array in a separate subplot
+    axes[0, 0].plot(aug_list[0])
+    axes[0, 0].set_title('Plot 1')
+
+    axes[0, 1].plot(aug_list[1])
+    axes[0, 1].set_title('Plot 2')
+
+    axes[1, 0].plot(aug_list[2])
+    axes[1, 0].set_title('Plot 3')
+
+    axes[1, 1].plot(aug_list[3])
+    axes[1, 1].set_title('Plot 4')
+
+    # Adjust layout for better spacing
+    plt.tight_layout()
+
+    # Save the figure to an image file
+    plt.savefig('aug_list_plots.png', dpi=300)  # Save with high resolution
+
+    # Optionally show the figure
+    plt.show()
+
+    import librosa
+    import soundfile as sf
+    import numpy as np
+
+    # Assuming aug_list contains your numpy arrays of audio signals
+    # Define sample rate (default in librosa is 22050 Hz, but you can customize it)
+    sample_rate = 16000
+
+    # Save each array in aug_list as a WAV file
+    for i, audio_data in enumerate(aug_list):
+        # Ensure audio data is a 1D numpy array
+        if len(audio_data.shape) > 1:
+            audio_data = np.mean(audio_data, axis=1)  # Convert stereo to mono
+
+        # Normalize the audio to avoid clipping
+        max_val = np.max(np.abs(audio_data))
+        if max_val > 1:
+            audio_data = audio_data / max_val
+
+        # Save as WAV
+        wav_filename = f"audio_{i + 1}.wav"
+        sf.write(wav_filename, audio_data, samplerate=sample_rate)
+        print(f"Saved: {wav_filename}")
 
 
-
-    
