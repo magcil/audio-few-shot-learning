@@ -6,34 +6,34 @@ sys.path.insert(0, PROJECT_PATH)
 
 from statistics import mean
 from tqdm import tqdm
-from torch.utils.data import DataLoader
+from torch.utils.data import Dataset
 from torch.optim import Optimizer
 import torch
-from loops.prototypical import evaluate
 from callbacks.early_stopping import EarlyStopping
-from datasets.task_sampler import generate_support_and_query
+from datasets.batch_creation import sample_episode
 import torch.nn.functional as F
 import numpy as np
 from collections import Counter
 
 
-def training_epoch(model, data_loader: DataLoader, optimizer: Optimizer, device, fsl_loss_fn, cpl_loss_fn, l_param,
-                   project_prototypes, normalize_prototypes):
+def training_epoch(model, dataset: Dataset, optimizer: Optimizer, num_train_tasks, device, fsl_loss_fn, cpl_loss_fn, l_param,
+                   project_prototypes, normalize_prototypes, n_classes, k_support, k_query, feat_extractor):
+
     all_loss = []
     model.train()
     fsl_loss_list = []
     cpl_loss_list = []
-    with tqdm(enumerate(data_loader), total=len(data_loader), desc="Training") as tqdm_train:
-        for episode_index, (
-                support_images,
-                support_labels,
-                query_images,
-                query_labels,
-                _,
-        ) in tqdm_train:
+    for task in tqdm(range(num_train_tasks), desc = "Training"):
+            support_list, support_labels, query_list, query_labels, audio_ids = sample_episode(dataset = dataset,
+                                                                                                           n_classes = n_classes, 
+                                                                                                           k_support = k_support, 
+                                                                                                           k_query = k_query, 
+                                                                                                                   is_test = False, device = device ,feat_extractor= feat_extractor)
+
+
             optimizer.zero_grad()
-            model.process_support_set(support_images.to(device), support_labels.to(device))
-            query_features = model(query_images.to(device))
+            model.process_support_set(support_list, support_labels.to(device))
+            query_features = model(query_list)
             fsl_loss = fsl_loss_fn(model.prototypes, query_features, query_labels.to(device))
             cpl_query_features, prototypes = model.contrastive_forward(project_prototypes)
             if project_prototypes == True:
@@ -47,35 +47,93 @@ def training_epoch(model, data_loader: DataLoader, optimizer: Optimizer, device,
             all_loss.append(final_loss.item())
             fsl_loss_list.append(fsl_loss.item())
             cpl_loss_list.append(cpl_loss.item())
-            tqdm_train.set_postfix(loss=mean(all_loss), loss_fsl=mean(fsl_loss_list), loss_cpl=mean(cpl_loss_list))
 
     return {"loss": mean(all_loss), "fsl_loss": mean(fsl_loss_list), "cpl_loss": mean(cpl_loss_list)}
 
+def evaluate_on_one_task(
+    model,
+    support_images: torch.Tensor,
+    support_labels: torch.Tensor,
+    query_images: torch.Tensor,
+    query_labels: torch.Tensor):
+    """
+    Returns the number of correct predictions of query labels, and the total number of
+    predictions.
+    """
+    model.process_support_set(support_images, support_labels)
+    with torch.no_grad():
+        predictions = model(query_images, inference=True)
+    number_of_correct_predictions = ((torch.max(predictions, 1)[1] == query_labels).sum().item())
 
-def contrastive_training_loop(model, training_loader, validation_loader, optimizer, device, fsl_loss_fn, cpl_loss_fn,
+    return number_of_correct_predictions, len(query_labels)
+
+
+def evaluate_single_segment(model, dataset, num_val_tasks, device, n_classes, k_support, k_query, feat_extractor):
+    # List to store accuracies for each task
+ 
+
+    accuracies = []
+
+    model.eval()
+    with torch.no_grad():
+        for task in tqdm(range(num_val_tasks), desc = "Validation"):
+                support_list, support_labels, query_list, query_labels, _ = sample_episode(dataset = dataset,
+                                                                                                           n_classes = n_classes, 
+                                                                                                           k_support = k_support, 
+                                                                                                           k_query = k_query, 
+                                                                                                           is_test = False, device = device , feat_extractor=feat_extractor)
+                support_list = [tensor.to(device) for tensor in support_list]
+                query_list = [tensor.to(device)for tensor in query_list]
+                correct, total = evaluate_on_one_task(
+                    model,
+                    support_list,
+                    support_labels.to(device),
+                    query_list,
+                    query_labels.to(device),
+                )
+
+                # Calculate accuracy for this task and store it
+                task_accuracy = correct / total
+                accuracies.append(task_accuracy)
+
+    # Calculate mean and standard deviation of accuracies
+    mean_accuracy = np.mean(accuracies)
+    std_accuracy = np.std(accuracies)
+
+    return mean_accuracy, std_accuracy
+
+
+def contrastive_training_loop(model, train_dataset, validation_dataset, optimizer,num_train_tasks,num_val_tasks, device, fsl_loss_fn, cpl_loss_fn,
                               l_param, epochs, train_scheduler, patience, results_path, project_prototypes,
-                              normalize_prototypes):
-
+                              normalize_prototypes,n_classes, k_support, k_query, feat_extractor):
+    
     ear_stopping = EarlyStopping(path=os.path.join(PROJECT_PATH, "experiments", results_path, "model.pt"),
                                  patience=patience,
                                  verbose=True)
 
     for epoch in range(1, epochs + 1):
         print(f"Epoch: {epoch:03}/{epochs+1:03}")
-        average_training_loss, average_fsl_loss, average_cpl_loss = training_epoch(
-            model=model,
-            data_loader=training_loader,
-            optimizer=optimizer,
-            device=device,
-            fsl_loss_fn=fsl_loss_fn,
-            cpl_loss_fn=cpl_loss_fn,
-            l_param=l_param,
-            project_prototypes=project_prototypes,
-            normalize_prototypes=normalize_prototypes)
+        average_training_loss, average_fsl_loss, average_cpl_loss = training_epoch(model = model, 
+                                                                                   dataset = train_dataset, 
+                                                                                   optimizer = optimizer, 
+                                                                                   num_train_tasks = num_train_tasks, 
+                                                                                   device = device, 
+                                                                                   fsl_loss_fn = fsl_loss_fn, 
+                                                                                   cpl_loss_fn = cpl_loss_fn, 
+                                                                                   l_param = l_param,
+                                                                                   project_prototypes = project_prototypes, 
+                                                                                   normalize_prototypes = normalize_prototypes, 
+                                                                                   n_classes = n_classes, 
+                                                                                   k_support = k_support, 
+                                                                                   k_query = k_query, feat_extractor=feat_extractor)
 
-        validation_accuracy, validation_accuracy_std = evaluate(model=model,
-                                                                data_loader=validation_loader,
-                                                                device=device)
+        validation_accuracy, validation_accuracy_std = evaluate_single_segment(model = model, 
+                                                                               dataset = validation_dataset, 
+                                                                               num_val_tasks = num_val_tasks, 
+                                                                               device = device, 
+                                                                               n_classes = n_classes, 
+                                                                               k_support = k_support, 
+                                                                               k_query = k_query, feat_extractor= feat_extractor)
         ear_stopping(val_accuracy=validation_accuracy, model=model, epoch=epoch)
         if ear_stopping.early_stop:
             print("Early Stopping.")
@@ -87,12 +145,6 @@ def contrastive_training_loop(model, training_loader, validation_loader, optimiz
     trained_model = model
 
     return trained_model
-
-
-def contrastive_testing_loop(trained_model, testing_loader, device):
-    test_accuracy, accuracy_std = evaluate(model=trained_model, data_loader=testing_loader, device=device)
-    return {"test_accuracy": test_accuracy, "test_accuracy_std": accuracy_std}
-
 
 def calculate_majority_vote_accuracy(predicted_labels,
                                      spectrogram_ids,
@@ -175,25 +227,25 @@ def calculate_majority_vote_accuracy(predicted_labels,
     return accuracy
 
 
-def multisegment_testing_loop(test_dataset, n_classes, k_support, k_query, num_test_tasks, trained_model, device,
-                              tie_strategy):
+def evaluate_multisegment_loop(test_dataset, n_classes, k_support, k_query, num_test_tasks, trained_model, device,
+                              tie_strategy, feat_extractor):
     list_of_accuracies = []
     for i in range(num_test_tasks):
         ## Generate a test episode:
-        support_set, support_labels, query_set, query_labels, spectrogram_ids = generate_support_and_query(
-            dataset=test_dataset, n_classes=n_classes, k_support=k_support, k_query=k_query)
-        support_set = support_set.to(device)
+        support_list, support_labels, query_list, query_labels, audio_ids = sample_episode(
+            dataset=test_dataset, n_classes=n_classes, k_support=k_support, k_query=k_query, is_test = True, device = device , feat_extractor = feat_extractor)
+        support_set = [tensor.to(device) for tensor in support_list]
+        query_set = [tensor.to(device) for tensor in query_list]
         support_labels = support_labels.to(device)
-        query_set = query_set.to(device)
         query_labels = query_labels.to(device)
-        spectrogram_ids = spectrogram_ids.to(device)
+        audio_ids = audio_ids.to(device)
         trained_model.process_support_set(support_set, support_labels)
         with torch.no_grad():
             predictions = trained_model(query_set, inference=True)
             predicted_labels = torch.max(predictions, 1)[1]
             posterior_values = torch.max(predictions, 1)[0]
             task_accuracy = calculate_majority_vote_accuracy(predicted_labels=predicted_labels,
-                                                             spectrogram_ids=spectrogram_ids,
+                                                             spectrogram_ids=audio_ids,
                                                              query_labels=query_labels,
                                                              tie_strategy=tie_strategy,
                                                              posterior_values=posterior_values)
