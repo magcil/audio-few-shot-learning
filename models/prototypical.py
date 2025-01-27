@@ -91,3 +91,40 @@ class ContrastivePrototypicalNetworks(FewShotClassifier):
     @staticmethod
     def is_transductive() -> bool:
         return False
+    
+
+class ContrastivePrototypicalNetworksWithoutAttention(FewShotClassifier):
+    def __init__(self, backbone, projection_head, *args, **kwargs):
+        # Call the parent class constructor and pass the remaining arguments
+        super(ContrastivePrototypicalNetworksWithoutAttention, self).__init__(*args, **kwargs)
+        self.backbone = backbone
+        self.projection_head = projection_head
+
+    def compute_features(self, images: Tensor) -> Tensor:
+        features = self.backbone(images)
+        return features
+
+    def compute_query_features(self, images: Tensor) -> Tensor:
+        self.query_feature_list = self.backbone(images)
+
+        return self.query_feature_list
+
+    def forward(self, query_images, inference=False):
+        self.query_feature_list = self.compute_query_features(query_images)
+        query_features = self.query_feature_list
+        self._raise_error_if_features_are_multi_dimensional(query_features)
+        if inference == True:
+            query_features = self.l2_distance_to_prototypes(query_features)
+        return query_features
+
+    def contrastive_forward(self, project_prototypes):
+        projected_features = self.projection_head(self.query_feature_list)
+        if project_prototypes == True:
+            projected_prototypes = self.projection_head(self.prototypes)
+        else:
+            projected_prototypes = self.prototypes
+        return projected_features, projected_prototypes
+
+    @staticmethod
+    def is_transductive() -> bool:
+        return False
