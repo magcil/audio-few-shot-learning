@@ -4,17 +4,15 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import torch
 import argparse
-from datasets.task_sampler import TaskSampler
 from datasets.datasets import MetaAudioDataset
-from torch.utils.data import DataLoader
 from models.main_modules import EncoderModule, SelfAttention, ProjectionHead
-from models.prototypical import ContrastivePrototypicalNetworks
-from loops.contrastive import contrastive_training_loop, multisegment_testing_loop, contrastive_testing_loop
+from models.prototypical import ContrastivePrototypicalNetworks,ContrastivePrototypicalNetworksWithoutAttention
+from loops.loops import contrastive_training_loop, evaluate_multisegment_loop,evaluate_single_segment
 from torch.optim.lr_scheduler import MultiStepLR
 from loops.loss import FSL_Loss, CPL_Loss
 import json
 import warnings
-
+import torchaudio
 warnings.filterwarnings("ignore")
 
 
@@ -51,8 +49,8 @@ if __name__ == "__main__":
     n_way = experiment_config['n_way']
     n_shot = experiment_config['n_shot']
     n_query = experiment_config['n_query']
-    multi_segm = experiment_config['multi_segm']
     tie_strategy = experiment_config['tie_strategy']
+    multi_segm = experiment_config['multi_segm']
     epochs = experiment_config['num_epochs']
     n_training_tasks = experiment_config['n_training_tasks']
     n_testing_tasks = experiment_config['n_testing_tasks']
@@ -63,36 +61,9 @@ if __name__ == "__main__":
 
     print(f"Loading Dataset:::  {dataset_name}, Device used:::  {device}")
 
-    train_set = MetaAudioDataset(root=dataset_path, split='train')
-    val_set = MetaAudioDataset(root=dataset_path, split='valid')
-    test_set = MetaAudioDataset(root=dataset_path, split='test', multi_segm=multi_segm)
-    ## Initialize Samplers
-    train_sampler = TaskSampler(train_set, n_way=n_way, n_shot=n_shot, n_query=n_query, n_tasks=n_training_tasks)
-    val_sampler = TaskSampler(val_set, n_way=n_way, n_shot=n_shot, n_query=n_query, n_tasks=n_training_tasks)
-
-    # ## Initialize DataLoaders
-    train_loader = DataLoader(
-        train_set,
-        batch_sampler=train_sampler,
-        pin_memory=True,
-        collate_fn=train_sampler.episodic_collate_fn,
-    )
-
-    val_loader = DataLoader(
-        val_set,
-        batch_sampler=val_sampler,
-        pin_memory=True,
-        collate_fn=val_sampler.episodic_collate_fn,
-    )
-    if multi_segm == False:
-
-        test_sampler = TaskSampler(test_set, n_way=n_way, n_shot=n_shot, n_query=n_query, n_tasks=n_testing_tasks)
-        test_loader = DataLoader(
-            test_set,
-            batch_sampler=test_sampler,
-            pin_memory=True,
-            collate_fn=test_sampler.episodic_collate_fn,
-        )
+    train_set = MetaAudioDataset(experiment_config = experiment_config,root=dataset_path, split='train')
+    val_set = MetaAudioDataset(experiment_config = experiment_config, root=dataset_path, split='valid')
+    test_set = MetaAudioDataset(experiment_config, root=dataset_path, split='test')
 
     ## Initialize Model, loss ,etc
     encoder_str = experiment_config['encoder_name']
@@ -111,9 +82,13 @@ if __name__ == "__main__":
     backbone = EncoderModule(experiment_config=experiment_config, model_config=model_config)
     attention = SelfAttention(model_config=model_config)
     projection = ProjectionHead(model_config=model_config)
-    few_shot_model = ContrastivePrototypicalNetworks(backbone=backbone,
+    if experiment_config['skip_attention'] == True:
+        few_shot_model = ContrastivePrototypicalNetworksWithoutAttention(backbone = backbone, projection_head = projection).to(device)
+    else:
+        few_shot_model = ContrastivePrototypicalNetworks(backbone=backbone,
                                                      attention_model=attention,
                                                      projection_head=projection).to(device)
+
     fsl_loss = FSL_Loss().to(device)
     cpl_loss = CPL_Loss(T=t_param, M=m_param).to(device)
     train_optimizer = torch.optim.Adam(few_shot_model.parameters(), lr=lr)
@@ -122,32 +97,54 @@ if __name__ == "__main__":
     print("Starting to train")
     project_prototypes = experiment_config['project_prototypes']
     normalize_prototypes = experiment_config['normalize_prototypes']
+    feat_extractor  =  torchaudio.transforms.MelSpectrogram(
+        sample_rate=16000,
+        n_mels=128,
+        n_fft=1024,
+        hop_length=512,
+        power=2.0,
+    ).to(device)
+
+
     trained_model = contrastive_training_loop(model=few_shot_model,
-                                              training_loader=train_loader,
-                                              validation_loader=val_loader,
-                                              optimizer=train_optimizer,
-                                              device=device,
-                                              fsl_loss_fn=fsl_loss,
-                                              cpl_loss_fn=cpl_loss,
-                                              l_param=l_param,
-                                              epochs=epochs,
-                                              train_scheduler=train_scheduler,
-                                              patience=patience,
-                                              results_path=experiment_folder,
-                                              project_prototypes=project_prototypes,
-                                              normalize_prototypes=normalize_prototypes)
+                                              train_dataset = train_set, 
+                                              validation_dataset = val_set, 
+                                              optimizer = train_optimizer, 
+                                              num_train_tasks = n_training_tasks, 
+                                              num_val_tasks = n_training_tasks, 
+                                              device = device, 
+                                              fsl_loss_fn = fsl_loss, 
+                                              cpl_loss_fn = cpl_loss, 
+                                              l_param = l_param, 
+                                              epochs = epochs, 
+                                              train_scheduler = train_scheduler, 
+                                              patience = patience, 
+                                              results_path = experiment_folder, 
+                                              project_prototypes = project_prototypes, 
+                                              normalize_prototypes = normalize_prototypes, 
+                                              n_classes = n_way, 
+                                              k_support = n_shot, 
+                                              k_query = n_query, feat_extractor= feat_extractor)
     print(trained_model)
     print("Starting to test")
     if multi_segm == False:
-        msg = contrastive_testing_loop(trained_model=trained_model, testing_loader=test_loader, device=device)
+        msg = evaluate_single_segment(model = trained_model, 
+                                      dataset = test_set, 
+                                      num_val_tasks = n_testing_tasks, 
+                                      device = device, 
+                                      n_classes = n_way, 
+                                      k_support =  n_shot, 
+                                      k_query = n_query, feat_extractor=feat_extractor)
 
     else:
-        msg = multisegment_testing_loop(test_dataset=test_set,
-                                        n_classes=n_way,
-                                        k_support=n_shot,
-                                        k_query=n_query,
-                                        num_test_tasks=n_testing_tasks,
-                                        trained_model=trained_model,
-                                        device=device,
-                                        tie_strategy=tie_strategy)
+        msg = evaluate_multisegment_loop(test_dataset = test_set, 
+                                         n_classes = n_way, 
+                                         k_support = n_shot, 
+                                         k_query = n_query, 
+                                         num_test_tasks = n_testing_tasks, 
+                                         trained_model = trained_model, 
+                                         device = device, 
+                                         tie_strategy = tie_strategy, feat_extractor= feat_extractor)
+
+                              
     print(msg)
