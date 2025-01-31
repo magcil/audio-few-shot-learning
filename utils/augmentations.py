@@ -179,9 +179,10 @@ class SpecAugment():
 
 class WaveAugment():
     def __init__(self, experiment_config):
-        self.sample_rate = 16000
-        self.params = experiment_config['waveaug_params']
-        self.dataset = experiment_config['dataset_name']
+        self.device = experiment_config['device']
+        self.sample_rate = torch.tensor(16000).to(self.device)
+        self.params = experiment_config['waveaug_params'].to(self.device)
+        self.dataset = self.experiment_config['dataset_name']
         self.feature_stats = {
             "FSD2018": {
                 "avg_centroid": 1944,
@@ -204,6 +205,7 @@ class WaveAugment():
                 "avg_flatness": 0.127
             }
         }
+        self.feature_stats = self.feature_stats.to(self.device)
         self.augmentation_composer = self.setup_augmentation_module()
 
     def setup_augmentation_module(self):
@@ -425,9 +427,10 @@ class WaveAugment():
             waveform: The waveform tensor
         """
         augmentations = []
-        waveform_torch = torch.from_numpy(waveform)
+        waveform_torch = waveform
         augmentations.append(waveform_torch)
-        waveform_torch = waveform_torch.unsqueeze(0).unsqueeze(0)
+        waveform_torch = waveform_torch.unsqueeze(1)
+        print(waveform_torch.device)
 
         for i in range(self.params['aug_num']):
             # Apply pytorch audiomentations
@@ -437,18 +440,16 @@ class WaveAugment():
             timestretch_p = self.params["timestretch_p"]
             if random.uniform(0,1) <= timestretch_p:
                 augmented_waveform_torch = self.apply_time_stretching(augmented_waveform_torch)
-
             # Apply time masking, if p > 0.5
             timemasking_p = self.params["timemasking_p"]
             if random.uniform(0,1) <= timemasking_p:
                 augmented_waveform_torch = self.apply_time_masking(augmented_waveform_torch)
-
             # Resize torch
             if augmented_waveform_torch.ndimension() == 3:
-                augmented_waveform_torch = augmented_waveform_torch.squeeze(0)
-            
+                augmented_waveform_torch = augmented_waveform_torch.squeeze()    
             # Save augmentation
-            augmentations.append(augmented_waveform_torch.squeeze(0))
+            augmentations.append(augmented_waveform_torch)
+            print(augmented_waveform_torch.device)
         
         return augmentations
 
