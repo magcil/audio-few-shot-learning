@@ -2,7 +2,8 @@ import os
 import sys
 
 sys.path.insert(0, os.path.abspath(os.path.dirname(os.path.dirname(__file__))))
-
+from pytorch_metric_learning.losses import AngularLoss  
+from pytorch_metric_learning.miners import AngularMiner
 import torch.nn as nn
 import torch
 import torch.nn.functional as F
@@ -34,7 +35,107 @@ class FSL_Loss(nn.Module):
 
         log_softmax = self.log_softmax(D)
         return self.nll_loss(log_softmax, labels)
+    
+# class AngularLossClass1(nn.Module):
+#     def __init__(self):
+#         super(AngularLossClass1, self).__init__()
+#         # Initialize the AngularLoss function
+#         self.loss_fn = AngularLoss()
+#         self.miner = AngularMiner(angle = 30)
 
+#     def forward(self, prototypes, queries, query_labels):
+#         """
+#         Compute the angular loss between prototypes and queries.
+
+#         Args:
+#             prototypes (torch.Tensor): Tensor of shape (num_prototypes, feature_dim),
+#                                        one prototype per class.
+#             queries (torch.Tensor): Tensor of shape (num_queries, feature_dim),
+#                                     with multiple queries per class.
+#             query_labels (torch.Tensor): Tensor of shape (num_queries,), indicating the class label
+#                                          for each query.
+
+#         Returns:
+#             torch.Tensor: The computed angular loss.
+#         """
+#         # Number of prototypes should match the number of unique query labels
+#         num_prototypes = prototypes.size(0)
+#         unique_labels = torch.unique(query_labels)
+#         assert num_prototypes == unique_labels.size(0)
+#         # Create labels for prototypes
+#         prototype_labels = torch.arange(num_prototypes)
+#         prototype_labels = prototype_labels.to(prototypes.device)
+#         # Combine prototypes and queries into one tensor
+#         embeddings = torch.cat([prototypes, queries], dim=0)
+
+#         # Combine prototype labels and query labels
+#         labels = torch.cat([prototype_labels, query_labels], dim=0)
+#         miner_output = self.miner(embeddings, labels)
+
+#         # Compute the angular loss
+#         loss = self.loss_fn(embeddings, labels, miner_output)
+#         return loss
+    
+
+class AngularLossClass(nn.Module):
+    def __init__(self,angle, prototypes_as_anchors):
+        super(AngularLossClass, self).__init__()
+        # Initialize the AngularLoss function
+        self.loss_fn = AngularLoss()
+        self.protoypes_as_anchors = prototypes_as_anchors
+        self.angle = angle
+        self.miner = AngularMiner(angle = self.angle)
+
+    def forward(self, prototypes, queries, query_labels):
+        """
+        Compute the angular loss between prototypes and queries.
+
+        Args:
+            prototypes (torch.Tensor): Tensor of shape (num_prototypes, feature_dim),
+                                       one prototype per class.
+            queries (torch.Tensor): Tensor of shape (num_queries, feature_dim),
+                                    with multiple queries per class.
+            query_labels (torch.Tensor): Tensor of shape (num_queries,), indicating the class label
+                                         for each query.
+
+        Returns:
+            torch.Tensor: The computed angular loss.
+        """
+        num_prototypes = prototypes.size(0)
+        unique_labels = torch.unique(query_labels)
+        assert num_prototypes == unique_labels.size(0)
+        # Create labels for prototypes
+        prototype_labels = torch.arange(num_prototypes)
+        if self.protoypes_as_anchors:
+            mined_examples = self.miner(
+            embeddings=prototypes,   # Prototypes as anchors
+            labels=prototype_labels, # Prototype labels
+            ref_emb=queries,         # Queries as references (positives/negatives)
+            ref_labels=query_labels)
+            anchor_labels = torch.tensor([prototype_labels[i] for i in mined_examples[0]])
+            embeddings = prototypes[mined_examples[0]]
+            positive_query = queries[mined_examples[1]]
+            negative_query = queries[mined_examples[2]]
+
+            ref_emb = torch.cat([positive_query,negative_query])
+            positive_labels = torch.tensor([query_labels[i] for i in mined_examples[1]])
+            negative_labels = torch.tensor([query_labels[i] for i in mined_examples[2]])
+            ref_labels = torch.cat([positive_labels, negative_labels])
+            loss = self.loss_fn(embeddings, anchor_labels, ref_emb=ref_emb, ref_labels=ref_labels)
+        else:
+            # Create labels for prototypes
+            prototype_labels = torch.arange(num_prototypes)
+            prototype_labels = prototype_labels.to(prototypes.device)
+            # Combine prototypes and queries into one tensor
+            embeddings = torch.cat([prototypes, queries], dim=0)
+
+            # Combine prototype labels and query labels
+            labels = torch.cat([prototype_labels, query_labels], dim=0)
+            miner_output = self.miner(embeddings, labels)
+
+            # Compute the angular loss
+            loss = self.loss_fn(embeddings, labels, miner_output)
+        return loss
 
 class CPL_Loss(nn.Module):
     """
@@ -42,7 +143,7 @@ class CPL_Loss(nn.Module):
     presented in https://arxiv.org/pdf/2101.0949.
     """
 
-    def __init__(self, T: float = 1.0, M: int = 4):
+    def __init__(self, T: float = 1.0, M: int = 5):
         """
         Args:
             T (float): Temperature hyperparameter.
@@ -103,3 +204,15 @@ class CPL_Loss(nn.Module):
         cos_sim = torch.stack(cos_sim)
 
         return cos_sim, torch.tensor(targets).to(self.device)
+
+
+if __name__ == '__main__':
+    prototypes = torch.rand(5,256)
+    queries = torch.rand(25,256)
+    query_labels = torch.tensor([0,0,0,0,0,1,1,1,1,1,2,2,2,2,2,3,3,3,3,3,4,4,4,4,4])
+    loss_fn = AngularLossClass()
+    angular_loss = loss_fn(prototypes = prototypes, queries = queries, query_labels = query_labels)
+    print(f"Angularloss:{angular_loss}")
+    loss_fn = CPL_Loss()
+    cpl_loss = loss_fn(prototypes = prototypes, queries = queries, labels = query_labels)
+    print(f"CPL_LOSS::: {cpl_loss}")
