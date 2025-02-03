@@ -180,9 +180,9 @@ class SpecAugment():
 class WaveAugment():
     def __init__(self, experiment_config):
         self.device = experiment_config['device']
-        self.sample_rate = torch.tensor(16000).to(self.device)
-        self.params = experiment_config['waveaug_params'].to(self.device)
-        self.dataset = self.experiment_config['dataset_name']
+        self.sample_rate = 16000
+        self.params = experiment_config['waveaug_params']
+        self.dataset = experiment_config['dataset_name']
         self.feature_stats = {
             "FSD2018": {
                 "avg_centroid": 1944,
@@ -205,7 +205,7 @@ class WaveAugment():
                 "avg_flatness": 0.127
             }
         }
-        self.feature_stats = self.feature_stats.to(self.device)
+        self.feature_stats = self.feature_stats
         self.augmentation_composer = self.setup_augmentation_module()
 
     def setup_augmentation_module(self):
@@ -219,9 +219,9 @@ class WaveAugment():
             Args:
                 type: min or max
             """
-            min_snr = self.params["min_snr_in_db"]
-            max_snr = self.params["max_snr_in_db"]
-            avg_flatness = self.feature_stats[self.dataset]['avg_flatness']
+            min_snr = torch.tensor(self.params["min_snr_in_db"]).to(self.device)
+            max_snr = torch.tensor(self.params["max_snr_in_db"]).to(self.device)
+            avg_flatness = torch.tensor(self.feature_stats[self.dataset]['avg_flatness']).to(self.device)
             adapted_bound = max_snr * (1 - avg_flatness)
 
             if type == "min":
@@ -238,8 +238,8 @@ class WaveAugment():
             Args:
                 type: min or max frequency
             """
-            avg_centroid = self.feature_stats[self.dataset]['avg_centroid']
-            avg_bandwidth = self.feature_stats[self.dataset]['avg_bandwidth']
+            avg_centroid = torch.tensor(self.feature_stats[self.dataset]['avg_centroid']).to(self.device)
+            avg_bandwidth = torch.tensor(self.feature_stats[self.dataset]['avg_bandwidth']).to(self.device)
 
             if type == "min":
                 return avg_centroid
@@ -253,8 +253,8 @@ class WaveAugment():
             Args:
                 type: min or max frequency
             """
-            avg_centroid = self.feature_stats[self.dataset]['avg_centroid']
-            avg_bandwidth = self.feature_stats[self.dataset]['avg_bandwidth']
+            avg_centroid = torch.tensor(self.feature_stats[self.dataset]['avg_centroid']).to(self.device)
+            avg_bandwidth = torch.tensor(self.feature_stats[self.dataset]['avg_bandwidth']).to(self.device)
 
             if type == "min":
                 return avg_centroid - avg_bandwidth / 2
@@ -268,8 +268,8 @@ class WaveAugment():
             Args:
                 type: min or max frequency
             """
-            avg_centroid = self.feature_stats[self.dataset]['avg_centroid']
-            avg_bandwidth = self.feature_stats[self.dataset]['avg_bandwidth']
+            avg_centroid = torch.tensor(self.feature_stats[self.dataset]['avg_centroid']).to(self.device)
+            avg_bandwidth = torch.tensor(self.feature_stats[self.dataset]['avg_bandwidth']).to(self.device)
 
             if type == "min":
                 return avg_centroid - avg_bandwidth / 2
@@ -280,14 +280,14 @@ class WaveAugment():
             transforms = [ 
                 LowPassFilter(
                     min_cutoff_freq = get_adapted_lowpass_frequencies(type="min"),
-                    max_cutoff_freq = get_adapted_lowpass_frequencies(type="min"),
+                    max_cutoff_freq = get_adapted_lowpass_frequencies(type="max"),
                     mode = "per_example",
                     p = self.params["lowpass_p"],
                     p_mode = None,
                     sample_rate  = self.sample_rate, 
                     target_rate = None,
                     output_type = 'tensor'
-                ),
+                ).to(self.device),
                 PitchShift(
                     min_transpose_semitones = self.params["pitchshift_min_transpose_semitones"],
                     max_transpose_semitones =self.params["pitchshift_max_transpose_semitones"],
@@ -297,7 +297,7 @@ class WaveAugment():
                     sample_rate = self.sample_rate,
                     target_rate = None,
                     output_type = 'tensor'
-                ),
+                ).to(self.device),
                 Shift(
                     min_shift = self.params["shift_min_shift"],
                     max_shift = self.params["shift_max_shift"],
@@ -309,7 +309,7 @@ class WaveAugment():
                     sample_rate = self.sample_rate,
                     target_rate = None,
                     output_type = 'tensor'
-                ),
+                ).to(self.device),
                 TimeInversion(
                     mode = "per_example",
                     p = self.params["timeinversion_p"],
@@ -317,7 +317,7 @@ class WaveAugment():
                     sample_rate = self.sample_rate,
                     target_rate = None,
                     output_type = 'tensor'
-                ),
+                ).to(self.device),
                 Gain(
                     min_gain_in_db = self.params["min_gain_in_db"],
                     max_gain_in_db = self.params["max_gain_in_db"],
@@ -327,7 +327,7 @@ class WaveAugment():
                     sample_rate = self.sample_rate,
                     target_rate = None,
                     output_type = 'tensor'
-                ),
+                ).to(self.device),
                 AddColoredNoise(
                     min_snr_in_db = get_adapted_snr(type="min"),
                     max_snr_in_db = get_adapted_snr(type="max"),
@@ -339,7 +339,7 @@ class WaveAugment():
                     sample_rate = self.sample_rate,
                     target_rate = None,
                     output_type='tensor'
-                ),
+                ).to(self.device),
                 HighPassFilter(
                     min_cutoff_freq = get_adapted_highpass_frequencies(type="min"),
                     max_cutoff_freq = get_adapted_highpass_frequencies(type="max"),
@@ -349,7 +349,7 @@ class WaveAugment():
                     sample_rate = self.sample_rate,
                     target_rate = None,
                     output_type = 'tensor'
-                ),
+                ).to(self.device),
                 BandStopFilter(
                     min_center_frequency = get_adapted_bandstop_frequencies(type="min"),
                     max_center_frequency = get_adapted_bandstop_frequencies(type="max"),
@@ -361,7 +361,7 @@ class WaveAugment():
                     sample_rate = self.sample_rate,
                     target_rate = None,
                     output_type='tensor'
-                ),
+                ).to(self.device),
                 SpliceOut(
                     num_time_intervals = self.params["spliceout_num_time_intervals"],
                     max_width = self.params["spliceout_max_width"],
@@ -371,7 +371,7 @@ class WaveAugment():
                     sample_rate = self.sample_rate,
                     target_rate = None,
                     output_type = 'tensor'
-                )
+                ).to(self.device)
             ]
         )
 
@@ -430,8 +430,6 @@ class WaveAugment():
         waveform_torch = waveform
         augmentations.append(waveform_torch)
         waveform_torch = waveform_torch.unsqueeze(1)
-        print(waveform_torch.device)
-
         for i in range(self.params['aug_num']):
             # Apply pytorch audiomentations
             augmented_waveform_torch = self.augmentation_composer(waveform_torch, sample_rate=16000)
@@ -449,7 +447,6 @@ class WaveAugment():
                 augmented_waveform_torch = augmented_waveform_torch.squeeze()    
             # Save augmentation
             augmentations.append(augmented_waveform_torch)
-            print(augmented_waveform_torch.device)
         
         return augmentations
 
