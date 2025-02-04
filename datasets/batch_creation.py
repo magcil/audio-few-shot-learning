@@ -13,7 +13,7 @@ def augment_spectrogram(item,experiment_config):
     return augmented_spec_list
     
 def augment_waveform(item,experiment_config):
-    item = item.numpy()
+    item = item
     augmentation_module = WaveAugment(experiment_config)
     augmented_wav_list = augmentation_module.apply_augmentations(item)
     return augmented_wav_list
@@ -118,8 +118,8 @@ def sample_episode(dataset, n_classes , k_support, k_query , is_test, device, fe
             query_set_list = [query_set]
 
     elif dataset.input_type == 'wav':
-        support_set_list = augment_waveform(item = support_set, experiment_config= dataset.experiment_config)
-        query_set_list = augment_waveform(item = query_set,experiment_config = dataset.experiment_config)
+        support_set_list = augment_waveform(item = support_set.to(device), experiment_config= dataset.experiment_config)
+        query_set_list = augment_waveform(item = query_set.to(device),experiment_config = dataset.experiment_config)
     
     support_tensor = torch.cat(support_set_list)
     query_tensor = torch.cat(query_set_list)
