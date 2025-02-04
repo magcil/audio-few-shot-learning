@@ -9,7 +9,7 @@ from models.main_modules import EncoderModule, SelfAttention, ProjectionHead
 from models.prototypical import ContrastivePrototypicalNetworks,ContrastivePrototypicalNetworksWithoutAttention
 from loops.loops import contrastive_training_loop, evaluate_multisegment_loop,evaluate_single_segment
 from torch.optim.lr_scheduler import MultiStepLR
-from loops.loss import FSL_Loss, CPL_Loss
+from loops.loss import FSL_Loss, CPL_Loss, AngularLossClass
 import json
 import warnings
 import torchaudio
@@ -55,9 +55,17 @@ if __name__ == "__main__":
     n_training_tasks = experiment_config['n_training_tasks']
     n_testing_tasks = experiment_config['n_testing_tasks']
     lr = experiment_config['lr']
-    l_param = experiment_config['l_param']
-    m_param = experiment_config['m_param']
-    t_param = experiment_config['t_param']
+    l_param = experiment_config['loss']['l_param']
+    loss = experiment_config['loss']
+    if loss['cpl']['use'] == True:
+        m_param = loss['cpl']['m_param']
+        t_param = loss['cpl']['t_param']
+        added_loss =  CPL_Loss(T=t_param, M=m_param).to(device)
+
+    elif loss['angular']['use'] == True:
+        angle = loss['angular']['angle']
+        prototypes_as_anchors = loss['angular']['prototypes_as_anchors']
+        added_loss = AngularLossClass(angle = angle, prototypes_as_anchors = prototypes_as_anchors)
 
     print(f"Loading Dataset:::  {dataset_name}, Device used:::  {device}")
 
@@ -90,7 +98,7 @@ if __name__ == "__main__":
                                                      projection_head=projection).to(device)
 
     fsl_loss = FSL_Loss().to(device)
-    cpl_loss = CPL_Loss(T=t_param, M=m_param).to(device)
+    added_loss = added_loss.to(device)
     train_optimizer = torch.optim.Adam(few_shot_model.parameters(), lr=lr)
     ## Initialize scheduler
     train_scheduler = MultiStepLR(train_optimizer, milestones=scheduler_milestones, gamma=scheduler_gamma)
@@ -114,7 +122,7 @@ if __name__ == "__main__":
                                               num_val_tasks = n_training_tasks, 
                                               device = device, 
                                               fsl_loss_fn = fsl_loss, 
-                                              cpl_loss_fn = cpl_loss, 
+                                              cpl_loss_fn = added_loss, 
                                               l_param = l_param, 
                                               epochs = epochs, 
                                               train_scheduler = train_scheduler, 

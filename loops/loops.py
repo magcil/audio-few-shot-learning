@@ -113,7 +113,7 @@ def contrastive_training_loop(model, train_dataset, validation_dataset, optimize
 
     for epoch in range(1, epochs + 1):
         print(f"Epoch: {epoch:03}/{epochs+1:03}")
-        average_training_loss, average_fsl_loss, average_cpl_loss = training_epoch(model = model, 
+        loss_msg = training_epoch(model = model, 
                                                                                    dataset = train_dataset, 
                                                                                    optimizer = optimizer, 
                                                                                    num_train_tasks = num_train_tasks, 
@@ -126,6 +126,7 @@ def contrastive_training_loop(model, train_dataset, validation_dataset, optimize
                                                                                    n_classes = n_classes, 
                                                                                    k_support = k_support, 
                                                                                    k_query = k_query, feat_extractor=feat_extractor)
+        print(loss_msg)
 
         validation_accuracy, validation_accuracy_std = evaluate_single_segment(model = model, 
                                                                                dataset = validation_dataset, 
