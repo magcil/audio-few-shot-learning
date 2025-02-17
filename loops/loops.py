@@ -17,7 +17,7 @@ from collections import Counter
 
 
 def training_epoch(model, dataset: Dataset, optimizer: Optimizer, num_train_tasks, device, fsl_loss_fn, cpl_loss_fn, l_param,
-                   project_prototypes, normalize_prototypes, n_classes, k_support, k_query, feat_extractor):
+                   project_prototypes, normalize_prototypes, n_classes, k_support, k_query, feat_extractor, use_contrastive, train_query_augmentations):
 
     all_loss = []
     model.train()
@@ -28,25 +28,38 @@ def training_epoch(model, dataset: Dataset, optimizer: Optimizer, num_train_task
                                                                                                            n_classes = n_classes, 
                                                                                                            k_support = k_support, 
                                                                                                            k_query = k_query, 
-                                                                                                                   is_test = False, device = device ,feat_extractor= feat_extractor)
+                                                                                                                   is_test = False, device = device ,feat_extractor= feat_extractor,augment_query = train_query_augmentations)
 
+            if model.__class__.__name__== "ContrastivePrototypicalNetworksWithoutAttention":
+                support_augm_len = len(support_list)
+                support_labels = support_labels.repeat(support_augm_len)
+                query_augm_len = len(query_list)
+                query_labels = query_labels.repeat(query_augm_len)
 
             optimizer.zero_grad()
             model.process_support_set(support_list, support_labels.to(device))
             query_features = model(query_list)
             fsl_loss = fsl_loss_fn(model.prototypes, query_features, query_labels.to(device))
-            cpl_query_features, prototypes = model.contrastive_forward(project_prototypes)
-            if project_prototypes == True:
-                normalize_prototypes = False
-            if normalize_prototypes == True:
-                prototypes = F.normalize(prototypes, p=2.0, dim=1, eps=1e-12, out=None)
-            cpl_loss = cpl_loss_fn(prototypes, cpl_query_features, query_labels.to(device))
-            final_loss = fsl_loss + l_param * cpl_loss
+            if use_contrastive == True:
+                cpl_query_features, prototypes = model.contrastive_forward(project_prototypes)
+                if project_prototypes == True:
+                    normalize_prototypes = False
+                if normalize_prototypes == True:
+                    prototypes = F.normalize(prototypes, p=2.0, dim=1, eps=1e-12, out=None)
+                cpl_loss = cpl_loss_fn(prototypes, cpl_query_features, query_labels.to(device))
+                final_loss = fsl_loss + l_param * cpl_loss
+                
+                all_loss.append(final_loss.item())
+                fsl_loss_list.append(fsl_loss.item())
+                cpl_loss_list.append(cpl_loss.item())
+            else: 
+                final_loss = fsl_loss
+                all_loss.append(final_loss.item())
+                fsl_loss_list.append(fsl_loss.item())
+                cpl_loss_list.append(np.nan)
             final_loss.backward()
             optimizer.step()
-            all_loss.append(final_loss.item())
-            fsl_loss_list.append(fsl_loss.item())
-            cpl_loss_list.append(cpl_loss.item())
+            
 
     return {"loss": mean(all_loss), "fsl_loss": mean(fsl_loss_list), "cpl_loss": mean(cpl_loss_list)}
 
@@ -68,7 +81,7 @@ def evaluate_on_one_task(
     return number_of_correct_predictions, len(query_labels)
 
 
-def evaluate_single_segment(model, dataset, num_val_tasks, device, n_classes, k_support, k_query, feat_extractor):
+def evaluate_single_segment(model, dataset, num_val_tasks, device, n_classes, k_support, k_query, feat_extractor, eval_query_augmentation):
     # List to store accuracies for each task
  
 
@@ -81,7 +94,12 @@ def evaluate_single_segment(model, dataset, num_val_tasks, device, n_classes, k_
                                                                                                            n_classes = n_classes, 
                                                                                                            k_support = k_support, 
                                                                                                            k_query = k_query, 
-                                                                                                           is_test = False, device = device , feat_extractor=feat_extractor)
+                                                                                                          is_test = False, device = device , feat_extractor=feat_extractor, augment_query= eval_query_augmentation)
+                if model.__class__.__name__== "ContrastivePrototypicalNetworksWithoutAttention":
+                    support_augm_len = len(support_list)
+                    support_labels = support_labels.repeat(support_augm_len)
+                    query_augm_len = len(query_list)
+                    query_labels = query_labels.repeat(query_augm_len)
                 support_list = [tensor.to(device) for tensor in support_list]
                 query_list = [tensor.to(device)for tensor in query_list]
                 correct, total = evaluate_on_one_task(
@@ -105,7 +123,8 @@ def evaluate_single_segment(model, dataset, num_val_tasks, device, n_classes, k_
 
 def contrastive_training_loop(model, train_dataset, validation_dataset, optimizer,num_train_tasks,num_val_tasks, device, fsl_loss_fn, cpl_loss_fn,
                               l_param, epochs, train_scheduler, patience, results_path, project_prototypes,
-                              normalize_prototypes,n_classes, k_support, k_query, feat_extractor):
+                              normalize_prototypes,n_train_classes,n_validation_classes, k_support_train,k_support_validation, k_query_train, k_query_validation, feat_extractor, use_contrastive,
+                              train_query_augmentations, validation_query_augmentations):
     
     ear_stopping = EarlyStopping(path=os.path.join(PROJECT_PATH, "experiments", results_path, "model.pt"),
                                  patience=patience,
@@ -113,28 +132,28 @@ def contrastive_training_loop(model, train_dataset, validation_dataset, optimize
 
     for epoch in range(1, epochs + 1):
         print(f"Epoch: {epoch:03}/{epochs+1:03}")
-        loss_msg = training_epoch(model = model, 
-                                                                                   dataset = train_dataset, 
-                                                                                   optimizer = optimizer, 
-                                                                                   num_train_tasks = num_train_tasks, 
-                                                                                   device = device, 
-                                                                                   fsl_loss_fn = fsl_loss_fn, 
-                                                                                   cpl_loss_fn = cpl_loss_fn, 
-                                                                                   l_param = l_param,
-                                                                                   project_prototypes = project_prototypes, 
-                                                                                   normalize_prototypes = normalize_prototypes, 
-                                                                                   n_classes = n_classes, 
-                                                                                   k_support = k_support, 
-                                                                                   k_query = k_query, feat_extractor=feat_extractor)
+        loss_msg = training_epoch(  model = model, 
+                                    dataset = train_dataset, 
+                                    optimizer = optimizer, 
+                                    num_train_tasks = num_train_tasks, 
+                                    device = device, 
+                                    fsl_loss_fn = fsl_loss_fn, 
+                                    cpl_loss_fn = cpl_loss_fn, 
+                                    l_param = l_param,
+                                    project_prototypes = project_prototypes, 
+                                    normalize_prototypes = normalize_prototypes, 
+                                    n_classes = n_train_classes, 
+                                    k_support = k_support_train, 
+                                    k_query = k_query_train, feat_extractor=feat_extractor, use_contrastive = use_contrastive, train_query_augmentations= train_query_augmentations)
         print(loss_msg)
 
         validation_accuracy, validation_accuracy_std = evaluate_single_segment(model = model, 
                                                                                dataset = validation_dataset, 
                                                                                num_val_tasks = num_val_tasks, 
                                                                                device = device, 
-                                                                               n_classes = n_classes, 
-                                                                               k_support = k_support, 
-                                                                               k_query = k_query, feat_extractor= feat_extractor)
+                                                                               n_classes = n_validation_classes, 
+                                                                               k_support = k_support_validation, 
+                                                                               k_query = k_query_validation, feat_extractor= feat_extractor, eval_query_augmentation= validation_query_augmentations)
         ear_stopping(val_accuracy=validation_accuracy, model=model, epoch=epoch)
         if ear_stopping.early_stop:
             print("Early Stopping.")
@@ -229,12 +248,18 @@ def calculate_majority_vote_accuracy(predicted_labels,
 
 
 def evaluate_multisegment_loop(test_dataset, n_classes, k_support, k_query, num_test_tasks, trained_model, device,
-                              tie_strategy, feat_extractor):
+                              tie_strategy, feat_extractor, eval_query_augmentation):
     list_of_accuracies = []
     for i in range(num_test_tasks):
         ## Generate a test episode:
         support_list, support_labels, query_list, query_labels, audio_ids = sample_episode(
-            dataset=test_dataset, n_classes=n_classes, k_support=k_support, k_query=k_query, is_test = True, device = device , feat_extractor = feat_extractor)
+            dataset=test_dataset, n_classes=n_classes, k_support=k_support, k_query=k_query, is_test = True, device = device , feat_extractor = feat_extractor, augment_query = eval_query_augmentation)
+        if trained_model.__class__.__name__== "ContrastivePrototypicalNetworksWithoutAttention":
+            support_augm_len = len(support_list)
+            support_labels = support_labels.repeat(support_augm_len)
+            query_augm_len = len(query_list)
+            query_labels = query_labels.repeat(query_augm_len)
+
         support_set = [tensor.to(device) for tensor in support_list]
         query_set = [tensor.to(device) for tensor in query_list]
         support_labels = support_labels.to(device)

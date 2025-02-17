@@ -11,7 +11,6 @@ class EncoderModule(nn.Module):
 
     def __init__(self, experiment_config, model_config):
         super(EncoderModule, self).__init__()
-        self.skip_attention_augmentations = experiment_config['skip_attention']
         self.experiment_config = experiment_config        
         self.encoder_str = experiment_config['encoder_name']
         self.encoder = get_backbone_model(encoder_name=self.encoder_str, model_config=model_config)
@@ -20,10 +19,6 @@ class EncoderModule(nn.Module):
         encoded_features = []
         for x in spec_list:
             encoded_x = self.encoder(x)
-            if self.skip_attention_augmentations:
-                return encoded_x
-
-            ## Encoded x will be of shape [batch_size,D]
             encoded_features.append(encoded_x)
         return encoded_features       
 

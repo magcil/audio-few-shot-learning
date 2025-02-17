@@ -1,6 +1,5 @@
 import os
 import sys
-
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import torch
 import argparse
@@ -46,9 +45,15 @@ if __name__ == "__main__":
         device = device_name + f":{gpu_index}"
 
     ## Choose training specifics
-    n_way = experiment_config['n_way']
-    n_shot = experiment_config['n_shot']
-    n_query = experiment_config['n_query']
+    n_way_train = experiment_config["n_way_train"]
+    n_way_validation = experiment_config["n_way_validation"]
+    n_way_test = experiment_config["n_way_test"]
+    n_shot_train = experiment_config['n_shot_train']
+    n_shot_validation = experiment_config['n_shot_validation']
+    n_shot_test = experiment_config['n_shot_test']
+    n_query_train = experiment_config['n_query_train']
+    n_query_validation = experiment_config['n_query_validation']
+    n_query_test = experiment_config['n_query_test']
     tie_strategy = experiment_config['tie_strategy']
     multi_segm = experiment_config['multi_segm']
     epochs = experiment_config['num_epochs']
@@ -57,6 +62,10 @@ if __name__ == "__main__":
     lr = experiment_config['lr']
     l_param = experiment_config['loss']['l_param']
     loss = experiment_config['loss']
+    use_contrastive = experiment_config['use_contrastive']
+    train_query_augmentations = experiment_config['train_query_augmentations']
+    validation_query_augmentations = experiment_config['validation_query_augmentations']
+    test_query_augmentations = experiment_config['test_query_augmentations']
     if loss['cpl']['use'] == True:
         m_param = loss['cpl']['m_param']
         t_param = loss['cpl']['t_param']
@@ -66,6 +75,7 @@ if __name__ == "__main__":
         angle = loss['angular']['angle']
         prototypes_as_anchors = loss['angular']['prototypes_as_anchors']
         added_loss = AngularLossClass(angle = angle, prototypes_as_anchors = prototypes_as_anchors)
+
 
     print(f"Loading Dataset:::  {dataset_name}, Device used:::  {device}")
 
@@ -86,73 +96,84 @@ if __name__ == "__main__":
         os.mkdir(f"experiments/{experiment_folder}")
     except:
         Exception("Already exists")
+    
+    for i in range(5):
+        print(f"NEW RUN !!! NUMBER OF RUN ::: {i}")
 
-    backbone = EncoderModule(experiment_config=experiment_config, model_config=model_config)
-    attention = SelfAttention(model_config=model_config)
-    projection = ProjectionHead(model_config=model_config)
-    if experiment_config['skip_attention'] == True:
-        few_shot_model = ContrastivePrototypicalNetworksWithoutAttention(backbone = backbone, projection_head = projection).to(device)
-    else:
-        few_shot_model = ContrastivePrototypicalNetworks(backbone=backbone,
-                                                     attention_model=attention,
-                                                     projection_head=projection).to(device)
+        backbone = EncoderModule(experiment_config=experiment_config, model_config=model_config)
+        attention = SelfAttention(model_config=model_config)
+        projection = ProjectionHead(model_config=model_config)
+        if experiment_config['use_attention'] == True:
+            few_shot_model = ContrastivePrototypicalNetworks(backbone=backbone,
+                                                        attention_model=attention,
+                                                        projection_head=projection).to(device) 
+        else:
+            few_shot_model = ContrastivePrototypicalNetworksWithoutAttention(backbone = backbone, projection_head = projection).to(device)
 
-    fsl_loss = FSL_Loss().to(device)
-    added_loss = added_loss.to(device)
-    train_optimizer = torch.optim.Adam(few_shot_model.parameters(), lr=lr)
-    ## Initialize scheduler
-    train_scheduler = MultiStepLR(train_optimizer, milestones=scheduler_milestones, gamma=scheduler_gamma)
-    print("Starting to train")
-    project_prototypes = experiment_config['project_prototypes']
-    normalize_prototypes = experiment_config['normalize_prototypes']
-    feat_extractor  =  torchaudio.transforms.MelSpectrogram(
-        sample_rate=16000,
-        n_mels=128,
-        n_fft=1024,
-        hop_length=512,
-        power=2.0,
-    ).to(device)
+        fsl_loss = FSL_Loss().to(device)
+        added_loss = added_loss.to(device)
+        train_optimizer = torch.optim.Adam(few_shot_model.parameters(), lr=lr)
+        ## Initialize scheduler
+        train_scheduler = MultiStepLR(train_optimizer, milestones=scheduler_milestones, gamma=scheduler_gamma)
+        print("Starting to train")
+        project_prototypes = experiment_config['project_prototypes']
+        normalize_prototypes = experiment_config['normalize_prototypes']
+        feat_extractor  =  torchaudio.transforms.MelSpectrogram(
+            sample_rate=16000,
+            n_mels=128,
+            n_fft=1024,
+            hop_length=512,
+            power=2.0,
+        ).to(device)
 
+        trained_model = contrastive_training_loop(model=few_shot_model,
+                                                train_dataset = train_set, 
+                                                validation_dataset = val_set, 
+                                                optimizer = train_optimizer, 
+                                                num_train_tasks = n_training_tasks, 
+                                                num_val_tasks = n_training_tasks, 
+                                                device = device, 
+                                                fsl_loss_fn = fsl_loss, 
+                                                cpl_loss_fn = added_loss, 
+                                                l_param = l_param, 
+                                                epochs = epochs, 
+                                                train_scheduler = train_scheduler, 
+                                                patience = patience, 
+                                                results_path = experiment_folder, 
+                                                project_prototypes = project_prototypes, 
+                                                normalize_prototypes = normalize_prototypes, 
+                                                n_train_classes = n_way_train, 
+                                                n_validation_classes = n_way_validation, 
+                                                k_support_train = n_shot_train, 
+                                                k_support_validation = n_shot_validation, 
+                                                k_query_train = n_query_train, 
+                                                k_query_validation = n_query_validation,
+                                                feat_extractor= feat_extractor,
+                                                use_contrastive = use_contrastive,
+                                                train_query_augmentations = train_query_augmentations,
+                                                validation_query_augmentations = validation_query_augmentations)
+        print(trained_model)
+        print("Starting to test")
+        if multi_segm == False:
+            msg = evaluate_single_segment(model = trained_model, 
+                                        dataset = test_set, 
+                                        num_val_tasks = n_testing_tasks, 
+                                        device = device, 
+                                        n_classes = n_way_test, 
+                                        k_support =  n_shot_test, 
+                                        k_query = n_query_test, feat_extractor=feat_extractor, 
+                                        eval_query_augmentation = test_query_augmentations)
 
-    trained_model = contrastive_training_loop(model=few_shot_model,
-                                              train_dataset = train_set, 
-                                              validation_dataset = val_set, 
-                                              optimizer = train_optimizer, 
-                                              num_train_tasks = n_training_tasks, 
-                                              num_val_tasks = n_training_tasks, 
-                                              device = device, 
-                                              fsl_loss_fn = fsl_loss, 
-                                              cpl_loss_fn = added_loss, 
-                                              l_param = l_param, 
-                                              epochs = epochs, 
-                                              train_scheduler = train_scheduler, 
-                                              patience = patience, 
-                                              results_path = experiment_folder, 
-                                              project_prototypes = project_prototypes, 
-                                              normalize_prototypes = normalize_prototypes, 
-                                              n_classes = n_way, 
-                                              k_support = n_shot, 
-                                              k_query = n_query, feat_extractor= feat_extractor)
-    print(trained_model)
-    print("Starting to test")
-    if multi_segm == False:
-        msg = evaluate_single_segment(model = trained_model, 
-                                      dataset = test_set, 
-                                      num_val_tasks = n_testing_tasks, 
-                                      device = device, 
-                                      n_classes = n_way, 
-                                      k_support =  n_shot, 
-                                      k_query = n_query, feat_extractor=feat_extractor)
+        else:
+            msg = evaluate_multisegment_loop(test_dataset = test_set, 
+                                            n_classes = n_way_test, 
+                                            k_support = n_shot_test, 
+                                            k_query = n_query_test, 
+                                            num_test_tasks = n_testing_tasks, 
+                                            trained_model = trained_model, 
+                                            device = device, 
+                                            tie_strategy = tie_strategy, feat_extractor= feat_extractor,
+                                            eval_query_augmentation = test_query_augmentations)
 
-    else:
-        msg = evaluate_multisegment_loop(test_dataset = test_set, 
-                                         n_classes = n_way, 
-                                         k_support = n_shot, 
-                                         k_query = n_query, 
-                                         num_test_tasks = n_testing_tasks, 
-                                         trained_model = trained_model, 
-                                         device = device, 
-                                         tie_strategy = tie_strategy, feat_extractor= feat_extractor)
-
-                              
-    print(msg)
+                                
+        print(msg)
