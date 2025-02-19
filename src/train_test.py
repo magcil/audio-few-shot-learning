@@ -126,7 +126,7 @@ if __name__ == "__main__":
             power=2.0,
         ).to(device)
 
-        trained_model = contrastive_training_loop(model=few_shot_model,
+        trained_model,training_prototypes = contrastive_training_loop(model=few_shot_model,
                                                 train_dataset = train_set, 
                                                 validation_dataset = val_set, 
                                                 optimizer = train_optimizer, 
@@ -162,7 +162,7 @@ if __name__ == "__main__":
                                         n_classes = n_way_test, 
                                         k_support =  n_shot_test, 
                                         k_query = n_query_test, feat_extractor=feat_extractor, 
-                                        eval_query_augmentation = test_query_augmentations)
+                                        eval_query_augmentation = test_query_augmentations, training_prototypes= training_prototypes)
 
         else:
             msg = evaluate_multisegment_loop(test_dataset = test_set, 

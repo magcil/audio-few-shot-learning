@@ -137,4 +137,3 @@ if __name__ == '__main__':
         experiment_config = json.load(f)
 
     data = MetaAudioDataset(experiment_config = experiment_config,root='/data/FSD2018', split='train')
-    print((data[0][0].shape))

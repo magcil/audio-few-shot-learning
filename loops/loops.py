@@ -23,8 +23,9 @@ def training_epoch(model, dataset: Dataset, optimizer: Optimizer, num_train_task
     model.train()
     fsl_loss_list = []
     cpl_loss_list = []
+    train_prototype_dict = {}
     for task in tqdm(range(num_train_tasks), desc = "Training"):
-            support_list, support_labels, query_list, query_labels, audio_ids = sample_episode(dataset = dataset,
+            support_list, support_labels, query_list, query_labels, audio_ids, original_support_labels = sample_episode(dataset = dataset,
                                                                                                            n_classes = n_classes, 
                                                                                                            k_support = k_support, 
                                                                                                            k_query = k_query, 
@@ -38,6 +39,11 @@ def training_epoch(model, dataset: Dataset, optimizer: Optimizer, num_train_task
 
             optimizer.zero_grad()
             model.process_support_set(support_list, support_labels.to(device))
+            for i,label in enumerate(original_support_labels):
+                if label not in train_prototype_dict:
+                    train_prototype_dict[label]= []
+                train_prototype_dict[label].append(model.prototypes[i])
+
             query_features = model(query_list)
             fsl_loss = fsl_loss_fn(model.prototypes, query_features, query_labels.to(device))
             if use_contrastive == True:
@@ -61,27 +67,28 @@ def training_epoch(model, dataset: Dataset, optimizer: Optimizer, num_train_task
             optimizer.step()
             
 
-    return {"loss": mean(all_loss), "fsl_loss": mean(fsl_loss_list), "cpl_loss": mean(cpl_loss_list)}
+    return {"loss": mean(all_loss), "fsl_loss": mean(fsl_loss_list), "cpl_loss": mean(cpl_loss_list)}, train_prototype_dict
 
 def evaluate_on_one_task(
     model,
     support_images: torch.Tensor,
     support_labels: torch.Tensor,
     query_images: torch.Tensor,
-    query_labels: torch.Tensor):
+    query_labels: torch.Tensor,
+    training_prototypes : dict):
     """
     Returns the number of correct predictions of query labels, and the total number of
     predictions.
     """
     model.process_support_set(support_images, support_labels)
     with torch.no_grad():
-        predictions = model(query_images, inference=True)
+        predictions = model(query_images, inference=True, training_prototypes = training_prototypes)
     number_of_correct_predictions = ((torch.max(predictions, 1)[1] == query_labels).sum().item())
 
     return number_of_correct_predictions, len(query_labels)
 
 
-def evaluate_single_segment(model, dataset, num_val_tasks, device, n_classes, k_support, k_query, feat_extractor, eval_query_augmentation):
+def evaluate_single_segment(model, dataset, num_val_tasks, device, n_classes, k_support, k_query, feat_extractor, eval_query_augmentation, training_prototypes):
     # List to store accuracies for each task
  
 
@@ -90,7 +97,7 @@ def evaluate_single_segment(model, dataset, num_val_tasks, device, n_classes, k_
     model.eval()
     with torch.no_grad():
         for task in tqdm(range(num_val_tasks), desc = "Validation"):
-                support_list, support_labels, query_list, query_labels, _ = sample_episode(dataset = dataset,
+                support_list, support_labels, query_list, query_labels, _,_ = sample_episode(dataset = dataset,
                                                                                                            n_classes = n_classes, 
                                                                                                            k_support = k_support, 
                                                                                                            k_query = k_query, 
@@ -108,6 +115,7 @@ def evaluate_single_segment(model, dataset, num_val_tasks, device, n_classes, k_
                     support_labels.to(device),
                     query_list,
                     query_labels.to(device),
+                    training_prototypes
                 )
 
                 # Calculate accuracy for this task and store it
@@ -129,10 +137,10 @@ def contrastive_training_loop(model, train_dataset, validation_dataset, optimize
     ear_stopping = EarlyStopping(path=os.path.join(PROJECT_PATH, "experiments", results_path, "model.pt"),
                                  patience=patience,
                                  verbose=True)
-
+    epoch_train_prototype_list = []
     for epoch in range(1, epochs + 1):
         print(f"Epoch: {epoch:03}/{epochs+1:03}")
-        loss_msg = training_epoch(  model = model, 
+        loss_msg, train_prototype_dict = training_epoch(  model = model, 
                                     dataset = train_dataset, 
                                     optimizer = optimizer, 
                                     num_train_tasks = num_train_tasks, 
@@ -146,6 +154,8 @@ def contrastive_training_loop(model, train_dataset, validation_dataset, optimize
                                     k_support = k_support_train, 
                                     k_query = k_query_train, feat_extractor=feat_extractor, use_contrastive = use_contrastive, train_query_augmentations= train_query_augmentations)
         print(loss_msg)
+        epoch_train_prototype_list.append(train_prototype_dict)
+        training_prototypes = organize_training_prototypes(epoch_train_prototype_list)
 
         validation_accuracy, validation_accuracy_std = evaluate_single_segment(model = model, 
                                                                                dataset = validation_dataset, 
@@ -153,7 +163,7 @@ def contrastive_training_loop(model, train_dataset, validation_dataset, optimize
                                                                                device = device, 
                                                                                n_classes = n_validation_classes, 
                                                                                k_support = k_support_validation, 
-                                                                               k_query = k_query_validation, feat_extractor= feat_extractor, eval_query_augmentation= validation_query_augmentations)
+                                                                               k_query = k_query_validation, feat_extractor= feat_extractor, eval_query_augmentation= validation_query_augmentations, training_prototypes = training_prototypes)
         ear_stopping(val_accuracy=validation_accuracy, model=model, epoch=epoch)
         if ear_stopping.early_stop:
             print("Early Stopping.")
@@ -164,7 +174,23 @@ def contrastive_training_loop(model, train_dataset, validation_dataset, optimize
     model.load_state_dict(torch.load(saved_model_pt_path))
     trained_model = model
 
-    return trained_model
+    return trained_model, training_prototypes
+
+
+
+def organize_training_prototypes(epoch_train_prototype_list):
+    merged_dict = {}
+    for epoch_dict in epoch_train_prototype_list:  # Iterate over dictionaries from different epochs
+        for label, prototypes in epoch_dict.items():
+            if label not in merged_dict:
+                merged_dict[label] = []  # Initialize if label is not present
+            merged_dict[label].extend(prototypes)  # Append prototypes
+
+    # Convert lists to tensors for consistency
+    merged_dict = {label: torch.stack(prototypes) for label, prototypes in merged_dict.items()}
+    return merged_dict
+
+
 
 def calculate_majority_vote_accuracy(predicted_labels,
                                      spectrogram_ids,
@@ -248,11 +274,11 @@ def calculate_majority_vote_accuracy(predicted_labels,
 
 
 def evaluate_multisegment_loop(test_dataset, n_classes, k_support, k_query, num_test_tasks, trained_model, device,
-                              tie_strategy, feat_extractor, eval_query_augmentation):
+                              tie_strategy, feat_extractor, eval_query_augmentation, training_prototypes):
     list_of_accuracies = []
     for i in range(num_test_tasks):
         ## Generate a test episode:
-        support_list, support_labels, query_list, query_labels, audio_ids = sample_episode(
+        support_list, support_labels, query_list, query_labels, audio_ids, _ = sample_episode(
             dataset=test_dataset, n_classes=n_classes, k_support=k_support, k_query=k_query, is_test = True, device = device , feat_extractor = feat_extractor, augment_query = eval_query_augmentation)
         if trained_model.__class__.__name__== "ContrastivePrototypicalNetworksWithoutAttention":
             support_augm_len = len(support_list)

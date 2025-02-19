@@ -10,6 +10,7 @@ import torch
 from typing import Optional
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from models.few_shot_classifier import FewShotClassifier
+import torch.nn.functional as F
 
 
 class PrototypicalNetworks(FewShotClassifier):
@@ -69,13 +70,16 @@ class ContrastivePrototypicalNetworks(FewShotClassifier):
         shuffled_features = torch.stack([feature_list[0]] + augmentations, dim=1)
         return shuffled_features
 
-    def forward(self, query_images, inference=False):
+    def forward(self, query_images, inference=False, training_prototypes = None) :
         self.query_feature_list = self.compute_query_features(query_images)
         query_features = torch.stack(self.query_feature_list, dim=1)
         query_features = self.attention_model(query_features)
         self._raise_error_if_features_are_multi_dimensional(query_features)
         if inference == True:
+            if training_prototypes:
+                self.prototypes  = self.calibrate_prototypes(training_prototypes = training_prototypes, calibration_t = 15, calibration_a = 0.7)
             query_features = self.l2_distance_to_prototypes(query_features)
+
         return query_features
 
     def contrastive_forward(self, project_prototypes):
@@ -92,6 +96,27 @@ class ContrastivePrototypicalNetworks(FewShotClassifier):
     def is_transductive() -> bool:
         return False
     
+    def calibrate_prototypes(self, training_prototypes,calibration_t,calibration_a):
+        self.training_prototypes = training_prototypes
+        batch_prototypes = self.prototypes
+        ## Unpack Them
+        mean_train_prototypes = []
+        for label in sorted(training_prototypes.keys()):
+            mean_train_prototype = torch.mean(training_prototypes[label], dim = 0)
+            mean_train_prototypes.append(mean_train_prototype.unsqueeze(0))
+        mean_train_prototypes = torch.concat(mean_train_prototypes, dim = 0)
+        similarity_scores = F.cosine_similarity(mean_train_prototypes.unsqueeze(0), batch_prototypes.unsqueeze(1), dim = 2) * calibration_t
+        weights = F.softmax(similarity_scores,dim = 1)
+        calibration_delta = torch.matmul(weights,mean_train_prototypes)
+        calibrated_prototypes = calibration_a * batch_prototypes + (1-calibration_a)*calibration_delta
+        self.prototypes = calibrated_prototypes
+
+        return self.prototypes
+
+
+    
+
+
 
 class ContrastivePrototypicalNetworksWithoutAttention(FewShotClassifier):
     def __init__(self, backbone, projection_head, *args, **kwargs):

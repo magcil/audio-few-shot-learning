@@ -32,6 +32,7 @@ def sample_episode(dataset, n_classes , k_support, k_query , is_test, device, fe
     audio_ids = []
     support_list = []
     query_list = []  
+    original_support_labels = []
         
     for class_label in sampled_classes:
         class_name = {v: k for k, v in class_to_label.items()}[class_label]
@@ -104,7 +105,7 @@ def sample_episode(dataset, n_classes , k_support, k_query , is_test, device, fe
                 query_labels.extend([remapped_label_mapping[class_label]]*wav_picked.shape[0])
                 audio_ids.extend([query_counter]*wav_picked.shape[0]) 
                 query_counter = query_counter + 1
-        
+        original_support_labels.append(class_label)
     support_set = torch.cat(support_set , dim = 0)
     query_set = torch.cat(query_set, dim = 0)
 
@@ -167,7 +168,7 @@ def sample_episode(dataset, n_classes , k_support, k_query , is_test, device, fe
     support_labels = torch.tensor(support_labels)
     query_labels = torch.tensor(query_labels)
     audio_ids = torch.tensor(audio_ids)
-    return support_list, support_labels, query_list, query_labels, audio_ids 
+    return support_list, support_labels, query_list, query_labels, audio_ids , original_support_labels
 
 
 def variable_wav_splits(sample):
@@ -233,11 +234,6 @@ if __name__ == "__main__":
         hop_length=512,
         power=2.0,
     ).to(device)
-    support_list, support_labels, query_list, query_labels, audio_ids = sample_episode(datset,5,5,5 ,is_test=  True , device = device , feat_extractor=feat_extractor)
-    for i in support_list:
-        print(i.shape)
+    support_list, support_labels, query_list, query_labels, audio_ids,original_support_labels = sample_episode(datset,5,5,5 ,is_test=  True , device = device , feat_extractor=feat_extractor, augment_query= False)
     print(support_labels)
-    for i in query_list:
-        print(i.shape)
-    print(len(query_labels))
-    print(len(audio_ids))
+    print(original_support_labels)
