@@ -77,7 +77,7 @@ class ContrastivePrototypicalNetworks(FewShotClassifier):
         self._raise_error_if_features_are_multi_dimensional(query_features)
         if inference == True:
             if training_prototypes:
-                self.prototypes  = self.calibrate_prototypes(training_prototypes = training_prototypes, calibration_t = 15, calibration_a = 0.7)
+                self.prototypes  = self.calibrate_prototypes(training_prototypes = training_prototypes, calibration_t = 1, calibration_a = 0.7)
             query_features = self.l2_distance_to_prototypes(query_features)
 
         return query_features
