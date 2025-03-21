@@ -28,3 +28,5 @@ tqdm==4.66.5
 librosa==0.10.2
 matplotlib==3.9.2
 audiomentations==0.37.0
+torch_audiomentations
+pytorch_metric_learning

@@ -17,7 +17,8 @@ from collections import Counter
 
 
 def training_epoch(model, dataset: Dataset, optimizer: Optimizer, num_train_tasks, device, fsl_loss_fn, cpl_loss_fn, l_param,
-                   project_prototypes, normalize_prototypes, n_classes, k_support, k_query, feat_extractor, use_contrastive, train_query_augmentations):
+                   project_prototypes, normalize_prototypes, n_classes, k_support, k_query, feat_extractor, use_contrastive, 
+                   train_query_augmentations, use_support_in_fsl = False, use_support_in_added = False):
 
     all_loss = []
     model.train()
@@ -39,16 +40,20 @@ def training_epoch(model, dataset: Dataset, optimizer: Optimizer, num_train_task
             optimizer.zero_grad()
             model.process_support_set(support_list, support_labels.to(device))
             query_features = model(query_list)
-            fsl_loss = fsl_loss_fn(model.prototypes, query_features, query_labels.to(device))
+            prototypes_or_support_in_fsl = model.prototypes if not use_support_in_fsl else model.support_features
+            fsl_labels = query_labels.to(device) if not use_support_in_fsl else torch.cat((query_labels,support_labels), dim=0) #.to(device)
+            fsl_loss = fsl_loss_fn(prototypes_or_support_in_fsl, query_features, fsl_labels)
             if use_contrastive == True:
                 cpl_query_features, prototypes = model.contrastive_forward(project_prototypes)
                 if project_prototypes == True:
                     normalize_prototypes = False
                 if normalize_prototypes == True:
                     prototypes = F.normalize(prototypes, p=2.0, dim=1, eps=1e-12, out=None)
-                cpl_loss = cpl_loss_fn(prototypes, cpl_query_features, query_labels.to(device))
+                prototypes_or_support_in_cpl = model.prototypes if not use_support_in_added else model.support_features
+                cpl_labels = query_labels.to(device) if not use_support_in_added else (query_labels, support_labels)
+                cpl_loss = cpl_loss_fn(prototypes_or_support_in_cpl, cpl_query_features, cpl_labels)
                 final_loss = fsl_loss + l_param * cpl_loss
-                
+
                 all_loss.append(final_loss.item())
                 fsl_loss_list.append(fsl_loss.item())
                 cpl_loss_list.append(cpl_loss.item())
@@ -124,7 +129,7 @@ def evaluate_single_segment(model, dataset, num_val_tasks, device, n_classes, k_
 def contrastive_training_loop(model, train_dataset, validation_dataset, optimizer,num_train_tasks,num_val_tasks, device, fsl_loss_fn, cpl_loss_fn,
                               l_param, epochs, train_scheduler, patience, results_path, project_prototypes,
                               normalize_prototypes,n_train_classes,n_validation_classes, k_support_train,k_support_validation, k_query_train, k_query_validation, feat_extractor, use_contrastive,
-                              train_query_augmentations, validation_query_augmentations):
+                              train_query_augmentations, validation_query_augmentations, use_support_in_fsl, use_support_in_added):
     
     ear_stopping = EarlyStopping(path=os.path.join(PROJECT_PATH, "experiments", results_path, "model.pt"),
                                  patience=patience,
@@ -144,7 +149,11 @@ def contrastive_training_loop(model, train_dataset, validation_dataset, optimize
                                     normalize_prototypes = normalize_prototypes, 
                                     n_classes = n_train_classes, 
                                     k_support = k_support_train, 
-                                    k_query = k_query_train, feat_extractor=feat_extractor, use_contrastive = use_contrastive, train_query_augmentations= train_query_augmentations)
+                                    k_query = k_query_train, feat_extractor=feat_extractor, 
+                                    use_contrastive = use_contrastive, 
+                                    train_query_augmentations = train_query_augmentations,
+                                    use_support_in_fsl = use_support_in_fsl,
+                                    use_support_in_added = use_support_in_added)
         print(loss_msg)
 
         validation_accuracy, validation_accuracy_std = evaluate_single_segment(model = model, 

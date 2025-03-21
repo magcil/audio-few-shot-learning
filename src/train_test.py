@@ -8,10 +8,11 @@ from models.main_modules import EncoderModule, SelfAttention, ProjectionHead
 from models.prototypical import ContrastivePrototypicalNetworks,ContrastivePrototypicalNetworksWithoutAttention
 from loops.loops import contrastive_training_loop, evaluate_multisegment_loop,evaluate_single_segment
 from torch.optim.lr_scheduler import MultiStepLR
-from loops.loss import FSL_Loss, CPL_Loss, AngularLossClass
+from loops.loss import FSL_Loss, CPL_Loss, AngularLossClass, FSL_Loss_all_support, CPL_Loss_all_support, AngularLossClass_support
 import json
 import warnings
 import torchaudio
+from pytorch_metric_learning import losses
 warnings.filterwarnings("ignore")
 
 
@@ -63,18 +64,30 @@ if __name__ == "__main__":
     l_param = experiment_config['loss']['l_param']
     loss = experiment_config['loss']
     use_contrastive = experiment_config['use_contrastive']
+    use_support_in_fsl = experiment_config['use_support_in_fsl']
+    use_support_in_added = experiment_config['use_support_in_cpl']
     train_query_augmentations = experiment_config['train_query_augmentations']
     validation_query_augmentations = experiment_config['validation_query_augmentations']
     test_query_augmentations = experiment_config['test_query_augmentations']
     if loss['cpl']['use'] == True:
         m_param = loss['cpl']['m_param']
         t_param = loss['cpl']['t_param']
-        added_loss =  CPL_Loss(T=t_param, M=m_param).to(device)
+        if use_support_in_added:
+            added_loss = CPL_Loss_all_support(T=t_param, M=m_param).to(device)
+        else:
+            added_loss = CPL_Loss(T=t_param, M=m_param).to(device)
 
     elif loss['angular']['use'] == True:
         angle = loss['angular']['angle']
         prototypes_as_anchors = loss['angular']['prototypes_as_anchors']
-        added_loss = AngularLossClass(angle = angle, prototypes_as_anchors = prototypes_as_anchors)
+        if use_support_in_added:
+            added_loss = AngularLossClass_support(angle = angle, prototypes_as_anchors = prototypes_as_anchors).to(device)
+        else:
+            added_loss = AngularLossClass(angle = angle, prototypes_as_anchors = prototypes_as_anchors).to(device)
+    
+    else:
+        added_loss = None
+        use_support_in_added = False
 
 
     print(f"Loading Dataset:::  {dataset_name}, Device used:::  {device}")
@@ -110,8 +123,10 @@ if __name__ == "__main__":
         else:
             few_shot_model = ContrastivePrototypicalNetworksWithoutAttention(backbone = backbone, projection_head = projection).to(device)
 
-        fsl_loss = FSL_Loss().to(device)
-        added_loss = added_loss.to(device)
+        if use_support_in_fsl:
+            fsl_loss = FSL_Loss_all_support().to(device)
+        else:
+            fsl_loss = FSL_Loss().to(device)
         train_optimizer = torch.optim.Adam(few_shot_model.parameters(), lr=lr)
         ## Initialize scheduler
         train_scheduler = MultiStepLR(train_optimizer, milestones=scheduler_milestones, gamma=scheduler_gamma)
@@ -151,7 +166,9 @@ if __name__ == "__main__":
                                                 feat_extractor= feat_extractor,
                                                 use_contrastive = use_contrastive,
                                                 train_query_augmentations = train_query_augmentations,
-                                                validation_query_augmentations = validation_query_augmentations)
+                                                validation_query_augmentations = validation_query_augmentations,
+                                                use_support_in_fsl = use_support_in_fsl,
+                                                use_support_in_added = use_support_in_added)
         print(trained_model)
         print("Starting to test")
         if multi_segm == False:
