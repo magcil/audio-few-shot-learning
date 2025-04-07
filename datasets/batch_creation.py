@@ -18,7 +18,7 @@ def augment_waveform(item,experiment_config):
     augmented_wav_list = augmentation_module.apply_augmentations(item)
     return augmented_wav_list
 
-def sample_episode(dataset, n_classes , k_support, k_query , is_test, device, feat_extractor):
+def sample_episode(dataset, n_classes , k_support, k_query , is_test, device, feat_extractor, augment_query):
     multi_segm = dataset.multi_segm
     class_to_label = dataset.class_to_label
     class_labels = list(class_to_label.values())
@@ -111,18 +111,26 @@ def sample_episode(dataset, n_classes , k_support, k_query , is_test, device, fe
     if dataset.input_type == 'spec':
         if dataset.specaug_use == True:
             support_set_list = augment_spectrogram(item = support_set, experiment_config = dataset.experiment_config)
-            query_set_list = augment_spectrogram(item = query_set, experiment_config = dataset.experiment_config)
+            if augment_query == True:
+                query_set_list = augment_spectrogram(item = query_set, experiment_config = dataset.experiment_config)
+            else: 
+                query_set_list = [query_set]
 
         else: 
             support_set_list = [support_set]
             query_set_list = [query_set]
 
     elif dataset.input_type == 'wav':
-        support_set_list = augment_waveform(item = support_set.to(device), experiment_config= dataset.experiment_config)
-        query_set_list = augment_waveform(item = query_set.to(device),experiment_config = dataset.experiment_config)
-    
-    support_tensor = torch.cat(support_set_list)
-    query_tensor = torch.cat(query_set_list)
+        if dataset.waveaug_use == True:
+            support_set_list = augment_waveform(item = support_set.to(device), experiment_config= dataset.experiment_config)
+            if augment_query == True :
+                query_set_list = augment_waveform(item = query_set.to(device),experiment_config = dataset.experiment_config)
+            else: query_set_list = [query_set]
+        else:
+            support_set_list = [support_set]
+            query_set_list = [query_set]
+    support_tensor = torch.cat(support_set_list).to(device)
+    query_tensor = torch.cat(query_set_list).to(device)
 
 
     support_batch_length = n_classes*k_support
