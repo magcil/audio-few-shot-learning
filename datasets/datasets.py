@@ -51,6 +51,9 @@ class MetaAudioDataset(FewShotDataset):
             if len(input.shape) == 2:
                 input = np.expand_dims(input, axis=0)
             input = torch.from_numpy(input)
+            if input.shape[0] >1:
+                input = input[0].unsqueeze(0)
+                
             normalized_input = self.normalize_spectrogram(input, mean = self.mean, std = self.std)
             normalized_input = normalized_input.unsqueeze(1)
         elif self.input_type == "wav":
