@@ -11,6 +11,7 @@ Repository for the paper titled: PROTOTYPICAL CONTRASTIVE LEARNING FOR IMPROVED 
 - [Scenarios](#4-scenarios)
 - [ModelConfig](#5-model_config)
 - [Hyperparameters](#6-hyperparameters)
+- [Run](#7-run)
 
 ## Overview
 In this project we study the effect of the combination of Prototypical loss and Contrastive learning for audio few shot classification task. Specaugment module is utlilized producing different versions of the input spectrogram. A self attention transformer is used to concatenate different views of the same input to on enriched representation. We run our experiments in MetaAudio's datasets : ESC-50, FSDKaggle2018, Birdclef2020, Nsynth and a susbset of VoxCeleb1, with the same splits and preprocessing, and encoder backbones as in the original paper for fair comparison. Lastly, the use of Angular loss is proposed.
@@ -464,6 +465,13 @@ For FS+APL parameters we have:
 
 
 
+
+## 7. Run
+To run an experiment you can use this line: 
+```bash
+cd audio-few-shot-learning
+python3 src/train_test.py -e [path_to_experiment_config.json] -m [path_to_model_config.json]
+```
 
 
 
