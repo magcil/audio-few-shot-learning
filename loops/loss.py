@@ -35,47 +35,6 @@ class FSL_Loss(nn.Module):
 
         log_softmax = self.log_softmax(D)
         return self.nll_loss(log_softmax, labels)
-    
-# class AngularLossClass1(nn.Module):
-#     def __init__(self):
-#         super(AngularLossClass1, self).__init__()
-#         # Initialize the AngularLoss function
-#         self.loss_fn = AngularLoss()
-#         self.miner = AngularMiner(angle = 30)
-
-#     def forward(self, prototypes, queries, query_labels):
-#         """
-#         Compute the angular loss between prototypes and queries.
-
-#         Args:
-#             prototypes (torch.Tensor): Tensor of shape (num_prototypes, feature_dim),
-#                                        one prototype per class.
-#             queries (torch.Tensor): Tensor of shape (num_queries, feature_dim),
-#                                     with multiple queries per class.
-#             query_labels (torch.Tensor): Tensor of shape (num_queries,), indicating the class label
-#                                          for each query.
-
-#         Returns:
-#             torch.Tensor: The computed angular loss.
-#         """
-#         # Number of prototypes should match the number of unique query labels
-#         num_prototypes = prototypes.size(0)
-#         unique_labels = torch.unique(query_labels)
-#         assert num_prototypes == unique_labels.size(0)
-#         # Create labels for prototypes
-#         prototype_labels = torch.arange(num_prototypes)
-#         prototype_labels = prototype_labels.to(prototypes.device)
-#         # Combine prototypes and queries into one tensor
-#         embeddings = torch.cat([prototypes, queries], dim=0)
-
-#         # Combine prototype labels and query labels
-#         labels = torch.cat([prototype_labels, query_labels], dim=0)
-#         miner_output = self.miner(embeddings, labels)
-
-#         # Compute the angular loss
-#         loss = self.loss_fn(embeddings, labels, miner_output)
-#         return loss
-    
 
 class AngularLossClass(nn.Module):
     def __init__(self,angle, prototypes_as_anchors):

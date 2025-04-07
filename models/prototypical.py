@@ -101,16 +101,12 @@ class ContrastivePrototypicalNetworksWithoutAttention(FewShotClassifier):
         self.projection_head = projection_head
 
     def compute_features(self, images: Tensor) -> Tensor:
-        features = self.backbone(images)
+        original_feature_list = self.backbone(images)
+        features = torch.concat(original_feature_list, dim=0)
         return features
-
-    def compute_query_features(self, images: Tensor) -> Tensor:
-        self.query_feature_list = self.backbone(images)
-
-        return self.query_feature_list
-
+    
     def forward(self, query_images, inference=False):
-        self.query_feature_list = self.compute_query_features(query_images)
+        self.query_feature_list = self.compute_features(query_images)
         query_features = self.query_feature_list
         self._raise_error_if_features_are_multi_dimensional(query_features)
         if inference == True:
