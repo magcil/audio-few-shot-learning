@@ -74,7 +74,10 @@ if __name__ == "__main__":
     elif loss['angular']['use'] == True:
         angle = loss['angular']['angle']
         prototypes_as_anchors = loss['angular']['prototypes_as_anchors']
-        added_loss = AngularLossClass(angle = angle, prototypes_as_anchors = prototypes_as_anchors)
+        added_loss = AngularLossClass(angle = angle, prototypes_as_anchors = prototypes_as_anchors).to(device)
+    
+    else:
+        added_loss = None
 
 
     print(f"Loading Dataset:::  {dataset_name}, Device used:::  {device}")
@@ -111,7 +114,6 @@ if __name__ == "__main__":
             few_shot_model = ContrastivePrototypicalNetworksWithoutAttention(backbone = backbone, projection_head = projection).to(device)
 
         fsl_loss = FSL_Loss().to(device)
-        added_loss = added_loss.to(device)
         train_optimizer = torch.optim.Adam(few_shot_model.parameters(), lr=lr)
         ## Initialize scheduler
         train_scheduler = MultiStepLR(train_optimizer, milestones=scheduler_milestones, gamma=scheduler_gamma)
