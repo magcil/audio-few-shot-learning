@@ -1,0 +1,43 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "Prototypical contrastive learning for few-shot audio classification"
+authors:
+  - family-names: Sgouropoulos
+    given-names: Christos
+    affiliation: 'MagCIL, Institute of Informatics and Telecommunications, NCSR "Demokritos"'
+  - family-names: Nikou
+    given-names: Christos
+    affiliation: 'MagCIL, Institute of Informatics and Telecommunications, NCSR "Demokritos"'
+  - family-names: Vlachos
+    given-names: Stefanos
+    affiliation: 'MagCIL, Institute of Informatics and Telecommunications, NCSR "Demokritos"'
+  - family-names: Theiou
+    given-names: Vasilis
+    affiliation: 'MagCIL, Institute of Informatics and Telecommunications, NCSR "Demokritos"'
+  - family-names: Foukanelis
+    given-names: Christos
+    affiliation: 'MagCIL, Institute of Informatics and Telecommunications, NCSR "Demokritos"'
+  - family-names: Giannakopoulos
+    given-names: Theodoros
+    affiliation: 'MagCIL, Institute of Informatics and Telecommunications, NCSR "Demokritos"'
+repository-code: "https://github.com/magcil/audio-few-shot-learning"
+url: "https://magcil.github.io"
+preferred-citation:
+  type: conference-paper
+  title: "Prototypical Contrastive Learning For Improved Few-Shot Audio Classification"
+  authors:
+    - family-names: Sgouropoulos
+      given-names: Christos
+    - family-names: Nikou
+      given-names: Christos
+    - family-names: Vlachos
+      given-names: Stefanos
+    - family-names: Theiou
+      given-names: Vasilis
+    - family-names: Foukanelis
+      given-names: Christos
+    - family-names: Giannakopoulos
+      given-names: Theodoros
+  collection-title: "2025 IEEE 35th International Workshop on Machine Learning for Signal Processing (MLSP)"
+  year: 2025
+  doi: 10.1109/MLSP62443.2025.11204215
